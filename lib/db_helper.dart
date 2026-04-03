@@ -1,3 +1,4 @@
+import 'dart:developer' as developer;
 import 'dart:io';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
@@ -8,7 +9,7 @@ class DbHelper {
   final String dbName;
   final int dbVersion;
 
-  DbHelper({this.dbName = 'clockwork.db', this.dbVersion = 1 });
+  DbHelper({this.dbName = 'clockwork.db', this.dbVersion = 1});
 
   Future<Database> get db async {
     _db ??= await _initDb();
@@ -35,14 +36,10 @@ class DbHelper {
     final dbDir = await _resolveDbDir();
     final dbPath = path.join(dbDir, dbName);
 
-    print('DB dir:   $dbDir');
-    print('DB path:  $dbPath');
+    developer.log('DB dir: $dbDir', name: 'DbHelper');
+    developer.log('DB path: $dbPath', name: 'DbHelper');
 
-    return openDatabase(
-      dbPath,
-      version: dbVersion,
-      onCreate: _onCreate,
-    );
+    return openDatabase(dbPath, version: dbVersion, onCreate: _onCreate);
   }
 
   Future<void> _onCreate(Database db, int version) async {
@@ -85,9 +82,9 @@ class DbHelper {
 
       const columnTypes = [
         ('integer', 'INTEGER'),
-        ('real',    'REAL'),
-        ('text',    'TEXT'),
-        ('entity',  'INTEGER')
+        ('real', 'REAL'),
+        ('text', 'TEXT'),
+        ('entity', 'INTEGER'),
       ];
       for (final (typeName, sqlType) in columnTypes) {
         final table = '${typeName}_comps';
@@ -120,29 +117,25 @@ class DbHelper {
     });
   }
 
-// === CRUD ===
+  // === CRUD ===
 
   Future<int> createCompKind({
-    required String name, 
-    required String displayName, 
-    required String storageType, 
-    int status = 1
+    required String name,
+    required String displayName,
+    required String storageType,
+    int status = 1,
   }) async {
     final database = await db;
 
     try {
-      return await database.insert(
-        'comp_kinds',
-        {
-          'name': name, 
-          'display_name': displayName, 
-          'storage_type': storageType, 
-          'status': status
-        },
-        conflictAlgorithm: ConflictAlgorithm.fail,
-      );
+      return await database.insert('comp_kinds', {
+        'name': name,
+        'display_name': displayName,
+        'storage_type': storageType,
+        'status': status,
+      }, conflictAlgorithm: ConflictAlgorithm.fail);
     } on DatabaseException catch (e) {
-      if (e.isUniqueConstraintError()){
+      if (e.isUniqueConstraintError()) {
         throw Exception('Component kind with name "$name" already exists');
       }
       rethrow;
@@ -150,28 +143,24 @@ class DbHelper {
   }
 
   Future<int> createEntityKind({
-    required String name, 
-    required String displayName, 
-    required List<int> compKinds, 
-    int status = 1
+    required String name,
+    required String displayName,
+    required List<int> compKinds,
+    int status = 1,
   }) async {
     final database = await db;
 
     try {
       final compKindsString = compKinds.join(',');
 
-      return await database.insert(
-        'entity_kinds',
-        {
-          'name': name, 
-          'display_name': displayName, 
-          'comp_kinds': compKindsString, 
-          'status': status
-        },
-        conflictAlgorithm: ConflictAlgorithm.fail,
-      );
+      return await database.insert('entity_kinds', {
+        'name': name,
+        'display_name': displayName,
+        'comp_kinds': compKindsString,
+        'status': status,
+      }, conflictAlgorithm: ConflictAlgorithm.fail);
     } on DatabaseException catch (e) {
-      if (e.isUniqueConstraintError()){
+      if (e.isUniqueConstraintError()) {
         throw Exception('Entity kind with name "$name" already exists');
       }
       rethrow;
@@ -179,9 +168,11 @@ class DbHelper {
   }
 
   // Temp getAll
-  Future<List<Map<String, dynamic>>> getAllEntities({bool includeInactive = false}) async {
+  Future<List<Map<String, dynamic>>> getAllEntities({
+    bool includeInactive = false,
+  }) async {
     final database = await db;
-    
+
     final result = await database.rawQuery('''
       SELECT 
         e.id          AS entity_id,
@@ -209,10 +200,9 @@ class DbHelper {
       columns: ['id', 'name', 'display_name', 'storage_type', 'status'],
       where: includeInactive ? null : 'status = ?',
       whereArgs: includeInactive ? null : [1],
-      orderBy: 'name ASC',           // nice default sorting
+      orderBy: 'name ASC', // nice default sorting
     );
   }
-
 
   Future<void> close() async {
     final database = await db;

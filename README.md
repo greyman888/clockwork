@@ -71,6 +71,12 @@ The code does not need to be written defensively but should include core protect
 
 The database size will remain small and focused on a single user.
 
+The application should target smooth operation at 60 FPS on its intended Windows desktop environment.
+
+UI changes that may reduce smoothness, introduce animation jank, or cause noticeable layout reflow should be identified and discussed before implementation.
+
+Use default flutter/dart API calls where possible.
+
 Take extra time to remove redundant code.
 
 Keep code easy to understand by human and ai agents by not using excessively condense statements.
