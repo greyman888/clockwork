@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'db_helper.dart';
+import 'definitions_page.dart';
 
 const _lightShellColor = Color(0xFFF3F3F3);
 const _darkShellColor = Color(0xFF202020);
@@ -109,15 +110,7 @@ class _ClockworkShellState extends State<ClockworkShell> {
             PaneItem(
               icon: const Icon(FluentIcons.database),
               title: const Text('Definitions'),
-              body: _PlaceholderPage(
-                title: 'Definitions',
-                description:
-                    'This area will manage entity kinds, component kinds, '
-                    'links between them, and editable enum options.',
-                icon: FluentIcons.edit,
-                actionLabel: 'Back to Welcome',
-                onActionPressed: () => _changeSection(0),
-              ),
+              body: const DefinitionsPage(),
             ),
             PaneItem(
               icon: const Icon(FluentIcons.task_manager),

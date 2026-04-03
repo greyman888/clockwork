@@ -394,7 +394,7 @@ class DbHelper {
 
     try {
       return await database.transaction((txn) async {
-        await _ensureActiveCompKindsExist(txn, normalizedCompKindIds);
+        await _ensureCompKindsExist(txn, normalizedCompKindIds);
 
         final entityKindId = await txn.insert('entity_kinds', {
           'name': normalizedName,
@@ -442,7 +442,22 @@ class DbHelper {
     try {
       await database.transaction((txn) async {
         await _requireEntityKind(txn, id);
-        await _ensureActiveCompKindsExist(txn, normalizedCompKindIds);
+        final currentCompKindIds = await _getLinkedCompKindIds(txn, id);
+        final currentCompKindIdSet = currentCompKindIds.toSet();
+        final requestedCompKindIdSet = normalizedCompKindIds.toSet();
+        final addedCompKindIds =
+            requestedCompKindIdSet.difference(currentCompKindIdSet).toList()
+              ..sort();
+        final preservedCompKindIds =
+            requestedCompKindIdSet.intersection(currentCompKindIdSet).toList()
+              ..sort();
+
+        await _ensureCompKindsExist(
+          txn,
+          preservedCompKindIds,
+          activeOnly: false,
+        );
+        await _ensureCompKindsExist(txn, addedCompKindIds);
 
         final updatedRows = await txn.update(
           'entity_kinds',
@@ -1312,10 +1327,25 @@ class DbHelper {
     }
   }
 
-  Future<void> _ensureActiveCompKindsExist(
+  Future<List<int>> _getLinkedCompKindIds(
     DatabaseExecutor db,
-    List<int> compKindIds,
+    int entityKindId,
   ) async {
+    final rows = await db.query(
+      'entity_kind_comp_kinds',
+      columns: ['comp_kind_id'],
+      where: 'entity_kind_id = ?',
+      whereArgs: [entityKindId],
+    );
+
+    return rows.map((row) => row['comp_kind_id'] as int).toList()..sort();
+  }
+
+  Future<void> _ensureCompKindsExist(
+    DatabaseExecutor db,
+    List<int> compKindIds, {
+    bool activeOnly = true,
+  }) async {
     if (compKindIds.isEmpty) {
       return;
     }
@@ -1324,7 +1354,7 @@ class DbHelper {
       SELECT id
       FROM comp_kinds
       WHERE id IN (${_placeholders(compKindIds.length)})
-        AND status = 1
+        ${activeOnly ? 'AND status = 1' : ''}
     ''', compKindIds);
 
     final foundIds = rows.map((row) => row['id'] as int).toSet();
@@ -1333,8 +1363,15 @@ class DbHelper {
         .toList();
 
     if (missingIds.isNotEmpty) {
+      if (activeOnly) {
+        throw Exception(
+          'Component kinds must exist and be active before they can be linked. '
+          'Missing ids: ${missingIds.join(', ')}.',
+        );
+      }
+
       throw Exception(
-        'Component kinds must exist and be active before they can be linked. '
+        'Component kinds must exist before they can be linked. '
         'Missing ids: ${missingIds.join(', ')}.',
       );
     }
