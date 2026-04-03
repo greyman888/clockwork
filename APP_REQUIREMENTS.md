@@ -28,8 +28,6 @@ The next field will be calculated as the difference between the start and end ti
 
 the final field will be the note.
 
-At this time the time entry entity does not have the start and end times. they will need to be added.
-
 Ensure that formatting is applied to the start and end times. ensure that tabbing between fields is enabled.
 
 At the end of the row provide a save button
