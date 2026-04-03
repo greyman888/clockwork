@@ -6,11 +6,11 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 class DbHelper {
-  DbHelper({this.dbName = 'clockwork.db'});
+  DbHelper({this.dbName = 'clockwork.db', this.databaseDirectory});
 
   static const int _schemaVersion = 2;
 
-  static Database? _db;
+  Database? _db;
 
   static const int activeStatus = 1;
   static const int deletedStatus = 0;
@@ -42,6 +42,7 @@ class DbHelper {
   };
 
   final String dbName;
+  final String? databaseDirectory;
 
   Future<Database> get db async {
     _db ??= await _initDb();
@@ -49,6 +50,11 @@ class DbHelper {
   }
 
   Future<String> _resolveDbDir() async {
+    if (databaseDirectory != null) {
+      await Directory(databaseDirectory!).create(recursive: true);
+      return databaseDirectory!;
+    }
+
     try {
       final supportDir = await getApplicationSupportDirectory();
       await Directory(supportDir.path).create(recursive: true);
@@ -773,6 +779,49 @@ class DbHelper {
     });
   }
 
+  Future<void> updateEntity({
+    required int entityId,
+    required int kindId,
+    Map<int, Object?> componentValues = const {},
+  }) async {
+    final database = await db;
+
+    await database.transaction((txn) async {
+      final entity = await _requireEntity(txn, entityId);
+      final previousKindId = entity['kind_id'] as int;
+
+      await _requireActiveEntityKind(txn, kindId);
+
+      if (previousKindId != kindId) {
+        for (final tableName in _componentTables.values) {
+          await txn.delete(
+            tableName,
+            where: 'entity_id = ?',
+            whereArgs: [entityId],
+          );
+        }
+
+        final updatedRows = await txn.update(
+          'entities',
+          {'kind_id': kindId},
+          where: 'id = ?',
+          whereArgs: [entityId],
+        );
+
+        if (updatedRows == 0) {
+          throw Exception('Entity $entityId could not be updated.');
+        }
+      }
+
+      await _applyComponentValues(
+        txn,
+        entityKindId: kindId,
+        entityId: entityId,
+        componentValues: componentValues,
+      );
+    });
+  }
+
   Future<void> updateEntityComponents({
     required int entityId,
     required Map<int, Object?> componentValues,
@@ -829,6 +878,53 @@ class DbHelper {
     return rows.map(Map<String, dynamic>.from).toList();
   }
 
+  Future<List<Map<String, dynamic>>> getEntitiesWithComponents({
+    required int kindId,
+    bool includeInactiveDefinitions = false,
+  }) async {
+    final database = await db;
+    await _requireActiveEntityKind(database, kindId);
+
+    final entities = await getAllEntities(kindId: kindId);
+    if (entities.isEmpty) {
+      return const [];
+    }
+
+    final definitions = await _getLinkedComponentDefinitions(
+      database,
+      entityKindId: kindId,
+      includeInactive: includeInactiveDefinitions,
+    );
+    final entityIds = entities.map((entity) => entity['id'] as int).toList();
+    final valuesByEntityId = await _loadStoredComponentValuesByEntity(
+      database,
+      entityIds: entityIds,
+      definitions: definitions,
+    );
+    final enumOptionsByKindId = await _loadEnumOptionsForDefinitions(
+      database,
+      definitions,
+    );
+
+    return entities.map((entity) {
+      final entityId = entity['id'] as int;
+      final componentValues = valuesByEntityId[entityId] ?? const {};
+      final components = <Map<String, dynamic>>[];
+
+      for (final definition in definitions) {
+        final component = Map<String, dynamic>.from(definition);
+        final compKindId = component['id'] as int;
+        component['value'] = componentValues[compKindId];
+        component['enum_options'] = enumOptionsByKindId[compKindId] ?? const [];
+        components.add(component);
+      }
+
+      final detailedEntity = Map<String, dynamic>.from(entity);
+      detailedEntity['components'] = components;
+      return detailedEntity;
+    }).toList();
+  }
+
   Future<Map<String, dynamic>?> getEntity(
     int entityId, {
     bool includeInactiveDefinitions = false,
@@ -864,6 +960,26 @@ class DbHelper {
     );
 
     return entity;
+  }
+
+  Future<List<Map<String, dynamic>>> getEntityKindComponents(
+    int entityKindId, {
+    bool includeInactiveDefinitions = false,
+  }) async {
+    final database = await db;
+
+    final components = await _getEntityComponents(
+      database,
+      entityId: -1,
+      entityKindId: entityKindId,
+      includeInactiveDefinitions: includeInactiveDefinitions,
+    );
+
+    for (final component in components) {
+      component['value'] = null;
+    }
+
+    return components;
   }
 
   Future<void> deleteEntity(int entityId) async {
@@ -997,6 +1113,50 @@ class DbHelper {
     }
 
     return valuesByKindId;
+  }
+
+  Future<Map<int, Map<int, Object?>>> _loadStoredComponentValuesByEntity(
+    DatabaseExecutor db, {
+    required List<int> entityIds,
+    required List<Map<String, dynamic>> definitions,
+  }) async {
+    if (entityIds.isEmpty || definitions.isEmpty) {
+      return const {};
+    }
+
+    final valuesByEntityId = <int, Map<int, Object?>>{};
+
+    for (final entry in _componentTables.entries) {
+      final storageType = entry.key;
+      final tableName = entry.value;
+      final kindIds = definitions
+          .where((definition) => definition['storage_type'] == storageType)
+          .map((definition) => definition['id'] as int)
+          .toList();
+
+      if (kindIds.isEmpty) {
+        continue;
+      }
+
+      final rows = await db.rawQuery(
+        '''
+        SELECT entity_id, kind_id, value
+        FROM $tableName
+        WHERE entity_id IN (${_placeholders(entityIds.length)})
+          AND kind_id IN (${_placeholders(kindIds.length)})
+      ''',
+        [...entityIds, ...kindIds],
+      );
+
+      for (final row in rows) {
+        final entityId = row['entity_id'] as int;
+        final kindId = row['kind_id'] as int;
+        valuesByEntityId.putIfAbsent(entityId, () => <int, Object?>{});
+        valuesByEntityId[entityId]![kindId] = row['value'];
+      }
+    }
+
+    return valuesByEntityId;
   }
 
   Future<Map<int, List<Map<String, dynamic>>>> _loadEnumOptionsForDefinitions(
@@ -1610,7 +1770,11 @@ class DbHelper {
   }
 
   Future<void> close() async {
-    final database = await db;
+    final database = _db;
+    if (database == null) {
+      return;
+    }
+
     await database.close();
     _db = null;
   }

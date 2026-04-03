@@ -6,6 +6,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'db_helper.dart';
 import 'definitions_page.dart';
+import 'entities_page.dart';
 
 const _lightShellColor = Color(0xFFF3F3F3);
 const _darkShellColor = Color(0xFF202020);
@@ -115,15 +116,7 @@ class _ClockworkShellState extends State<ClockworkShell> {
             PaneItem(
               icon: const Icon(FluentIcons.task_manager),
               title: const Text('Entities'),
-              body: _PlaceholderPage(
-                title: 'Entities',
-                description:
-                    'This area will handle entity CRUD and editing all '
-                    'component values for each entity on a single screen.',
-                icon: FluentIcons.table,
-                actionLabel: 'Back to Welcome',
-                onActionPressed: () => _changeSection(0),
-              ),
+              body: const EntitiesPage(),
             ),
           ],
         ),
@@ -410,68 +403,6 @@ class _ChecklistLine extends StatelessWidget {
           Expanded(child: Text(text, style: theme.typography.body)),
         ],
       ),
-    );
-  }
-}
-
-class _PlaceholderPage extends StatelessWidget {
-  const _PlaceholderPage({
-    required this.title,
-    required this.description,
-    required this.icon,
-    required this.actionLabel,
-    required this.onActionPressed,
-  });
-
-  final String title;
-  final String description;
-  final IconData icon;
-  final String actionLabel;
-  final VoidCallback onActionPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = FluentTheme.of(context);
-
-    return ScaffoldPage.scrollable(
-      header: PageHeader(title: Text(title)),
-      children: [
-        Card(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Container(
-                width: 52,
-                height: 52,
-                decoration: BoxDecoration(
-                  color: theme.accentColor.lightest,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(icon, color: theme.accentColor.normal),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'This section is scaffolded next.',
-                      style: theme.typography.subtitle,
-                    ),
-                    const SizedBox(height: 8),
-                    Text(description, style: theme.typography.bodyLarge),
-                    const SizedBox(height: 16),
-                    Button(
-                      onPressed: onActionPressed,
-                      child: Text(actionLabel),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
     );
   }
 }

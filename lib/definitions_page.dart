@@ -1,6 +1,8 @@
 import 'package:fluent_ui/fluent_ui.dart';
 
 import 'db_helper.dart';
+import 'editor_helpers.dart';
+import 'editor_widgets.dart';
 
 const _storageTypeLabels = <String, String>{
   DbHelper.storageInteger: 'Integer',
@@ -108,8 +110,6 @@ class _ComponentKindsSectionState extends State<_ComponentKindsSection> {
   bool _includeInactive = false;
   bool _isLoading = true;
   bool _isSaving = false;
-  String? _message;
-  InfoBarSeverity _messageSeverity = InfoBarSeverity.info;
 
   bool get _isEditing => _selectedComponentKindId != null;
 
@@ -132,7 +132,7 @@ class _ComponentKindsSectionState extends State<_ComponentKindsSection> {
   @override
   void initState() {
     super.initState();
-    _loadComponentKinds();
+    _loadComponentKinds(preferNew: true);
   }
 
   @override
@@ -142,7 +142,10 @@ class _ComponentKindsSectionState extends State<_ComponentKindsSection> {
     super.dispose();
   }
 
-  Future<void> _loadComponentKinds({int? selectId}) async {
+  Future<void> _loadComponentKinds({
+    int? selectId,
+    bool preferNew = false,
+  }) async {
     setState(() => _isLoading = true);
 
     try {
@@ -154,11 +157,13 @@ class _ComponentKindsSectionState extends State<_ComponentKindsSection> {
         return;
       }
 
-      final nextSelectedId = _resolveSelectedId(
-        items: componentKinds,
-        explicitSelection: selectId,
-        currentSelection: _selectedComponentKindId,
-      );
+      final nextSelectedId = preferNew
+          ? null
+          : resolveSelectedId(
+              items: componentKinds,
+              explicitSelection: selectId,
+              currentSelection: _selectedComponentKindId,
+            );
 
       setState(() {
         _componentKinds = componentKinds;
@@ -175,10 +180,11 @@ class _ComponentKindsSectionState extends State<_ComponentKindsSection> {
         return;
       }
 
-      setState(() {
-        _message = error.toString();
-        _messageSeverity = InfoBarSeverity.error;
-      });
+      await showNoticeDialog(
+        context,
+        title: 'Unable to load component kinds',
+        message: error.toString(),
+      );
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -229,8 +235,6 @@ class _ComponentKindsSectionState extends State<_ComponentKindsSection> {
     setState(() => _isSaving = true);
 
     try {
-      int selectedId = _selectedComponentKindId ?? 0;
-
       if (wasEditing) {
         await dbHelper.updateCompKind(
           id: _selectedComponentKindId!,
@@ -243,7 +247,7 @@ class _ComponentKindsSectionState extends State<_ComponentKindsSection> {
               : DbHelper.deletedStatus,
         );
       } else {
-        selectedId = await dbHelper.createCompKind(
+        await dbHelper.createCompKind(
           name: name,
           displayName: displayName,
           storageType: _storageType,
@@ -252,24 +256,21 @@ class _ComponentKindsSectionState extends State<_ComponentKindsSection> {
       }
 
       widget.onDefinitionsChanged();
-      await _loadComponentKinds(selectId: selectedId);
+      await _loadComponentKinds(preferNew: true);
 
       if (!mounted) {
         return;
       }
-
-      setState(() {
-        _message = null;
-      });
     } catch (error) {
       if (!mounted) {
         return;
       }
 
-      setState(() {
-        _message = error.toString();
-        _messageSeverity = InfoBarSeverity.error;
-      });
+      await showNoticeDialog(
+        context,
+        title: 'Unable to save component kind',
+        message: error.toString(),
+      );
     } finally {
       if (mounted) {
         setState(() => _isSaving = false);
@@ -283,7 +284,7 @@ class _ComponentKindsSectionState extends State<_ComponentKindsSection> {
     }
 
     final isActive = _selectedIsActive;
-    final confirmed = await _showConfirmationDialog(
+    final confirmed = await showConfirmationDialog(
       context,
       title: isActive
           ? 'Soft delete component kind?'
@@ -314,31 +315,26 @@ class _ComponentKindsSectionState extends State<_ComponentKindsSection> {
       if (!mounted) {
         return;
       }
-
-      setState(() {
-        _message = isActive
-            ? 'Component kind soft-deleted.'
-            : 'Component kind restored.';
-        _messageSeverity = InfoBarSeverity.success;
-      });
     } catch (error) {
       if (!mounted) {
         return;
       }
 
-      setState(() {
-        _message = error.toString();
-        _messageSeverity = InfoBarSeverity.error;
-      });
+      await showNoticeDialog(
+        context,
+        title: 'Unable to update component kind',
+        message: error.toString(),
+      );
     }
   }
 
   Future<void> _createEnumOption() async {
     if (_selectedComponentKindId == null) {
-      setState(() {
-        _message = 'Save the component kind before adding enum options.';
-        _messageSeverity = InfoBarSeverity.warning;
-      });
+      await showNoticeDialog(
+        context,
+        title: 'Save component kind first',
+        message: 'Save the component kind before adding enum options.',
+      );
       return;
     }
 
@@ -360,20 +356,16 @@ class _ComponentKindsSectionState extends State<_ComponentKindsSection> {
       if (!mounted) {
         return;
       }
-
-      setState(() {
-        _message = 'Enum option added.';
-        _messageSeverity = InfoBarSeverity.success;
-      });
     } catch (error) {
       if (!mounted) {
         return;
       }
 
-      setState(() {
-        _message = error.toString();
-        _messageSeverity = InfoBarSeverity.error;
-      });
+      await showNoticeDialog(
+        context,
+        title: 'Unable to add enum option',
+        message: error.toString(),
+      );
     }
   }
 
@@ -402,25 +394,21 @@ class _ComponentKindsSectionState extends State<_ComponentKindsSection> {
       if (!mounted) {
         return;
       }
-
-      setState(() {
-        _message = 'Enum option updated.';
-        _messageSeverity = InfoBarSeverity.success;
-      });
     } catch (error) {
       if (!mounted) {
         return;
       }
 
-      setState(() {
-        _message = error.toString();
-        _messageSeverity = InfoBarSeverity.error;
-      });
+      await showNoticeDialog(
+        context,
+        title: 'Unable to update enum option',
+        message: error.toString(),
+      );
     }
   }
 
   Future<void> _deleteEnumOption(Map<String, dynamic> option) async {
-    final confirmed = await _showConfirmationDialog(
+    final confirmed = await showConfirmationDialog(
       context,
       title: 'Delete enum option?',
       message:
@@ -440,20 +428,16 @@ class _ComponentKindsSectionState extends State<_ComponentKindsSection> {
       if (!mounted) {
         return;
       }
-
-      setState(() {
-        _message = 'Enum option deleted.';
-        _messageSeverity = InfoBarSeverity.success;
-      });
     } catch (error) {
       if (!mounted) {
         return;
       }
 
-      setState(() {
-        _message = error.toString();
-        _messageSeverity = InfoBarSeverity.error;
-      });
+      await showNoticeDialog(
+        context,
+        title: 'Unable to delete enum option',
+        message: error.toString(),
+      );
     }
   }
 
@@ -463,7 +447,7 @@ class _ComponentKindsSectionState extends State<_ComponentKindsSection> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SectionHeading(
+          SectionHeading(
             title: 'Component Kinds',
             description:
                 'Define the reusable fields available to entity kinds.',
@@ -471,14 +455,6 @@ class _ComponentKindsSectionState extends State<_ComponentKindsSection> {
             onPrimaryAction: _resetComponentKindForm,
             onRefresh: _loadComponentKinds,
           ),
-          if (_message != null) ...[
-            const SizedBox(height: 12),
-            _InlineMessageBar(
-              text: _message!,
-              severity: _messageSeverity,
-              onClose: () => setState(() => _message = null),
-            ),
-          ],
           const SizedBox(height: 16),
           _buildComponentKindEditor(context),
           const SizedBox(height: 20),
@@ -562,7 +538,7 @@ class _ComponentKindsSectionState extends State<_ComponentKindsSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _EditorHeading(
+        EditorHeading(
           title: _isEditing ? 'Edit component kind' : 'New component kind',
           statusLabel: _isEditing
               ? (_selectedIsActive ? 'Active' : 'Soft-deleted')
@@ -570,19 +546,19 @@ class _ComponentKindsSectionState extends State<_ComponentKindsSection> {
           isActive: _selectedIsActive,
         ),
         const SizedBox(height: 12),
-        _LabeledTextBox(
+        LabeledTextBox(
           label: 'Internal name',
           controller: _nameController,
           placeholder: 'customer_number',
         ),
         const SizedBox(height: 12),
-        _LabeledTextBox(
+        LabeledTextBox(
           label: 'Display name',
           controller: _displayNameController,
           placeholder: 'Customer Number',
         ),
         const SizedBox(height: 12),
-        _LabeledComboBox<String>(
+        LabeledComboBox<String>(
           label: 'Storage type',
           value: _storageType,
           items: _storageTypeLabels.entries
@@ -608,7 +584,7 @@ class _ComponentKindsSectionState extends State<_ComponentKindsSection> {
           },
         ),
         const SizedBox(height: 12),
-        _LabeledComboBox<String>(
+        LabeledComboBox<String>(
           label: 'Semantic type',
           value: _semanticType,
           items: semanticOptions
@@ -740,8 +716,6 @@ class _EntityKindsSectionState extends State<_EntityKindsSection> {
   bool _includeInactive = false;
   bool _isLoading = true;
   bool _isSaving = false;
-  String? _message;
-  InfoBarSeverity _messageSeverity = InfoBarSeverity.info;
 
   bool get _isEditing => _selectedEntityKindId != null;
 
@@ -764,7 +738,7 @@ class _EntityKindsSectionState extends State<_EntityKindsSection> {
   @override
   void initState() {
     super.initState();
-    _loadEntityKinds();
+    _loadEntityKinds(preferNew: true);
   }
 
   @override
@@ -782,7 +756,7 @@ class _EntityKindsSectionState extends State<_EntityKindsSection> {
     super.dispose();
   }
 
-  Future<void> _loadEntityKinds({int? selectId}) async {
+  Future<void> _loadEntityKinds({int? selectId, bool preferNew = false}) async {
     setState(() => _isLoading = true);
 
     try {
@@ -797,11 +771,13 @@ class _EntityKindsSectionState extends State<_EntityKindsSection> {
 
       final entityKinds = results[0];
       final allComponentKinds = results[1];
-      final nextSelectedId = _resolveSelectedId(
-        items: entityKinds,
-        explicitSelection: selectId,
-        currentSelection: _selectedEntityKindId,
-      );
+      final nextSelectedId = preferNew
+          ? null
+          : resolveSelectedId(
+              items: entityKinds,
+              explicitSelection: selectId,
+              currentSelection: _selectedEntityKindId,
+            );
 
       setState(() {
         _entityKinds = entityKinds;
@@ -819,10 +795,11 @@ class _EntityKindsSectionState extends State<_EntityKindsSection> {
         return;
       }
 
-      setState(() {
-        _message = error.toString();
-        _messageSeverity = InfoBarSeverity.error;
-      });
+      await showNoticeDialog(
+        context,
+        title: 'Unable to load entity kinds',
+        message: error.toString(),
+      );
     } finally {
       if (mounted) {
         setState(() => _isLoading = false);
@@ -877,7 +854,7 @@ class _EntityKindsSectionState extends State<_EntityKindsSection> {
           ..sort();
 
     if (wasEditing && removedCompKindIds.isNotEmpty) {
-      final confirmed = await _showConfirmationDialog(
+      final confirmed = await showConfirmationDialog(
         context,
         title: 'Remove linked component kinds?',
         message:
@@ -894,8 +871,6 @@ class _EntityKindsSectionState extends State<_EntityKindsSection> {
     setState(() => _isSaving = true);
 
     try {
-      int selectedId = _selectedEntityKindId ?? 0;
-
       if (wasEditing) {
         await dbHelper.updateEntityKind(
           id: _selectedEntityKindId!,
@@ -907,31 +882,28 @@ class _EntityKindsSectionState extends State<_EntityKindsSection> {
               : DbHelper.deletedStatus,
         );
       } else {
-        selectedId = await dbHelper.createEntityKind(
+        await dbHelper.createEntityKind(
           name: name,
           displayName: displayName,
           compKindIds: linkedCompKindIds,
         );
       }
 
-      await _loadEntityKinds(selectId: selectedId);
+      await _loadEntityKinds(preferNew: true);
 
       if (!mounted) {
         return;
       }
-
-      setState(() {
-        _message = null;
-      });
     } catch (error) {
       if (!mounted) {
         return;
       }
 
-      setState(() {
-        _message = error.toString();
-        _messageSeverity = InfoBarSeverity.error;
-      });
+      await showNoticeDialog(
+        context,
+        title: 'Unable to save entity kind',
+        message: error.toString(),
+      );
     } finally {
       if (mounted) {
         setState(() => _isSaving = false);
@@ -945,7 +917,7 @@ class _EntityKindsSectionState extends State<_EntityKindsSection> {
     }
 
     final isActive = _selectedIsActive;
-    final confirmed = await _showConfirmationDialog(
+    final confirmed = await showConfirmationDialog(
       context,
       title: isActive ? 'Soft delete entity kind?' : 'Restore entity kind?',
       message: isActive
@@ -972,22 +944,16 @@ class _EntityKindsSectionState extends State<_EntityKindsSection> {
       if (!mounted) {
         return;
       }
-
-      setState(() {
-        _message = isActive
-            ? 'Entity kind soft-deleted.'
-            : 'Entity kind restored.';
-        _messageSeverity = InfoBarSeverity.success;
-      });
     } catch (error) {
       if (!mounted) {
         return;
       }
 
-      setState(() {
-        _message = error.toString();
-        _messageSeverity = InfoBarSeverity.error;
-      });
+      await showNoticeDialog(
+        context,
+        title: 'Unable to update entity kind',
+        message: error.toString(),
+      );
     }
   }
 
@@ -997,7 +963,7 @@ class _EntityKindsSectionState extends State<_EntityKindsSection> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _SectionHeading(
+          SectionHeading(
             title: 'Entity Kinds',
             description:
                 'Define object categories and the component kinds they use.',
@@ -1005,14 +971,6 @@ class _EntityKindsSectionState extends State<_EntityKindsSection> {
             onPrimaryAction: _resetEntityKindForm,
             onRefresh: _loadEntityKinds,
           ),
-          if (_message != null) ...[
-            const SizedBox(height: 12),
-            _InlineMessageBar(
-              text: _message!,
-              severity: _messageSeverity,
-              onClose: () => setState(() => _message = null),
-            ),
-          ],
           const SizedBox(height: 16),
           _buildEntityKindEditor(context),
           const SizedBox(height: 20),
@@ -1094,7 +1052,7 @@ class _EntityKindsSectionState extends State<_EntityKindsSection> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _EditorHeading(
+        EditorHeading(
           title: _isEditing ? 'Edit entity kind' : 'New entity kind',
           statusLabel: _isEditing
               ? (_selectedIsActive ? 'Active' : 'Soft-deleted')
@@ -1102,13 +1060,13 @@ class _EntityKindsSectionState extends State<_EntityKindsSection> {
           isActive: _selectedIsActive,
         ),
         const SizedBox(height: 12),
-        _LabeledTextBox(
+        LabeledTextBox(
           label: 'Internal name',
           controller: _nameController,
           placeholder: 'customer',
         ),
         const SizedBox(height: 12),
-        _LabeledTextBox(
+        LabeledTextBox(
           label: 'Display name',
           controller: _displayNameController,
           placeholder: 'Customer',
@@ -1222,28 +1180,6 @@ class _EntityKindsSectionState extends State<_EntityKindsSection> {
   }
 }
 
-int? _resolveSelectedId({
-  required List<Map<String, dynamic>> items,
-  required int? explicitSelection,
-  required int? currentSelection,
-}) {
-  final availableIds = items.map((item) => item['id'] as int).toSet();
-
-  if (explicitSelection != null && availableIds.contains(explicitSelection)) {
-    return explicitSelection;
-  }
-
-  if (currentSelection != null && availableIds.contains(currentSelection)) {
-    return currentSelection;
-  }
-
-  if (items.isEmpty) {
-    return null;
-  }
-
-  return items.first['id'] as int;
-}
-
 String _storageLabel(String value) {
   return _storageTypeLabels[value] ?? value;
 }
@@ -1294,35 +1230,6 @@ String _componentKindHelpText(String storageType, String semanticType) {
   return 'The semantic type controls presentation and validation while storage stays fixed by physical type.';
 }
 
-Future<bool> _showConfirmationDialog(
-  BuildContext context, {
-  required String title,
-  required String message,
-  required String confirmLabel,
-}) async {
-  final result = await showDialog<bool>(
-    context: context,
-    builder: (dialogContext) {
-      return ContentDialog(
-        title: Text(title),
-        content: Text(message),
-        actions: [
-          Button(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: Text(confirmLabel),
-          ),
-        ],
-      );
-    },
-  );
-
-  return result ?? false;
-}
-
 Future<_EnumOptionDraft?> _showEnumOptionDialog(
   BuildContext context, {
   String initialValue = '',
@@ -1353,19 +1260,19 @@ Future<_EnumOptionDraft?> _showEnumOptionDialog(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _LabeledTextBox(
+                  LabeledTextBox(
                     label: 'Value',
                     controller: valueController,
                     placeholder: 'active',
                   ),
                   const SizedBox(height: 12),
-                  _LabeledTextBox(
+                  LabeledTextBox(
                     label: 'Display label',
                     controller: displayLabelController,
                     placeholder: 'Active',
                   ),
                   const SizedBox(height: 12),
-                  _LabeledTextBox(
+                  LabeledTextBox(
                     label: 'Sort order',
                     controller: sortOrderController,
                     placeholder: '0',
@@ -1440,179 +1347,4 @@ class _EnumOptionDraft {
   final String value;
   final String displayLabel;
   final int sortOrder;
-}
-
-class _SectionHeading extends StatelessWidget {
-  const _SectionHeading({
-    required this.title,
-    required this.description,
-    required this.primaryActionLabel,
-    required this.onPrimaryAction,
-    required this.onRefresh,
-  });
-
-  final String title;
-  final String description;
-  final String primaryActionLabel;
-  final VoidCallback onPrimaryAction;
-  final Future<void> Function() onRefresh;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = FluentTheme.of(context);
-
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(title, style: theme.typography.subtitle),
-              const SizedBox(height: 6),
-              Text(description, style: theme.typography.body),
-            ],
-          ),
-        ),
-        const SizedBox(width: 16),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            Button(onPressed: onRefresh, child: const Text('Refresh')),
-            FilledButton(
-              onPressed: onPrimaryAction,
-              child: Text(primaryActionLabel),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-}
-
-class _InlineMessageBar extends StatelessWidget {
-  const _InlineMessageBar({
-    required this.text,
-    required this.severity,
-    required this.onClose,
-  });
-
-  final String text;
-  final InfoBarSeverity severity;
-  final VoidCallback onClose;
-
-  @override
-  Widget build(BuildContext context) {
-    return InfoBar(
-      title: const Text('Definitions'),
-      content: Text(text),
-      severity: severity,
-      isLong: true,
-      onClose: onClose,
-    );
-  }
-}
-
-class _EditorHeading extends StatelessWidget {
-  const _EditorHeading({
-    required this.title,
-    required this.statusLabel,
-    required this.isActive,
-  });
-
-  final String title;
-  final String statusLabel;
-  final bool isActive;
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = FluentTheme.of(context);
-
-    return Row(
-      children: [
-        Expanded(child: Text(title, style: theme.typography.bodyStrong)),
-        _StatusPill(label: statusLabel, isActive: isActive),
-      ],
-    );
-  }
-}
-
-class _StatusPill extends StatelessWidget {
-  const _StatusPill({required this.label, required this.isActive});
-
-  final String label;
-  final bool isActive;
-
-  @override
-  Widget build(BuildContext context) {
-    final backgroundColor = isActive
-        ? Colors.successPrimaryColor.withAlpha(35)
-        : Colors.warningPrimaryColor.withAlpha(40);
-    final foregroundColor = isActive
-        ? Colors.successPrimaryColor
-        : Colors.warningPrimaryColor;
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-      decoration: BoxDecoration(
-        color: backgroundColor,
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(color: foregroundColor, fontWeight: FontWeight.w600),
-      ),
-    );
-  }
-}
-
-class _LabeledTextBox extends StatelessWidget {
-  const _LabeledTextBox({
-    required this.label,
-    required this.controller,
-    required this.placeholder,
-  });
-
-  final String label;
-  final TextEditingController controller;
-  final String placeholder;
-
-  @override
-  Widget build(BuildContext context) {
-    return InfoLabel(
-      label: label,
-      child: TextBox(controller: controller, placeholder: placeholder),
-    );
-  }
-}
-
-class _LabeledComboBox<T> extends StatelessWidget {
-  const _LabeledComboBox({
-    required this.label,
-    required this.value,
-    required this.items,
-    required this.onChanged,
-  });
-
-  final String label;
-  final T value;
-  final List<ComboBoxItem<T>> items;
-  final ValueChanged<T?> onChanged;
-
-  @override
-  Widget build(BuildContext context) {
-    return InfoLabel(
-      label: label,
-      child: SizedBox(
-        width: 260,
-        child: ComboBox<T>(
-          value: value,
-          items: items,
-          onChanged: onChanged,
-          isExpanded: true,
-        ),
-      ),
-    );
-  }
 }
