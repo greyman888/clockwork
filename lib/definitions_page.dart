@@ -498,30 +498,30 @@ class _ComponentKindsSectionState extends State<_ComponentKindsSection> {
   }
 
   Widget _buildComponentKindList(BuildContext context) {
+    final theme = FluentTheme.of(context);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Existing component kinds',
-          style: FluentTheme.of(context).typography.bodyStrong,
-        ),
+        Text('Existing component kinds', style: theme.typography.bodyStrong),
         const SizedBox(height: 12),
         Container(
-          height: 360,
           decoration: BoxDecoration(
-            border: Border.all(color: FluentTheme.of(context).inactiveColor),
+            border: Border.all(color: theme.inactiveColor),
             borderRadius: BorderRadius.circular(8),
           ),
           child: _isLoading
-              ? const Center(child: ProgressRing())
+              ? const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Center(child: ProgressRing()),
+                )
               : _componentKinds.isEmpty
-              ? const Center(
+              ? const Padding(
+                  padding: EdgeInsets.all(24),
                   child: Text('No component kinds yet. Create the first one.'),
                 )
-              : ListView.builder(
-                  itemCount: _componentKinds.length,
-                  itemBuilder: (context, index) {
-                    final componentKind = _componentKinds[index];
+              : Column(
+                  children: _componentKinds.map((componentKind) {
                     final componentKindId = componentKind['id'] as int;
                     final isActive =
                         componentKind['status'] == DbHelper.activeStatus;
@@ -546,7 +546,7 @@ class _ComponentKindsSectionState extends State<_ComponentKindsSection> {
                         _loadComponentKindDetail(componentKindId);
                       },
                     );
-                  },
+                  }).toList(),
                 ),
         ),
       ],
@@ -1032,28 +1032,30 @@ class _EntityKindsSectionState extends State<_EntityKindsSection> {
   }
 
   Widget _buildEntityKindList(BuildContext context) {
+    final theme = FluentTheme.of(context);
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Existing entity kinds',
-          style: FluentTheme.of(context).typography.bodyStrong,
-        ),
+        Text('Existing entity kinds', style: theme.typography.bodyStrong),
         const SizedBox(height: 12),
         Container(
-          height: 360,
           decoration: BoxDecoration(
-            border: Border.all(color: FluentTheme.of(context).inactiveColor),
+            border: Border.all(color: theme.inactiveColor),
             borderRadius: BorderRadius.circular(8),
           ),
           child: _isLoading
-              ? const Center(child: ProgressRing())
+              ? const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Center(child: ProgressRing()),
+                )
               : _entityKinds.isEmpty
-              ? const Center(child: Text('No entity kinds yet.'))
-              : ListView.builder(
-                  itemCount: _entityKinds.length,
-                  itemBuilder: (context, index) {
-                    final entityKind = _entityKinds[index];
+              ? const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Text('No entity kinds yet.'),
+                )
+              : Column(
+                  children: _entityKinds.map((entityKind) {
                     final entityKindId = entityKind['id'] as int;
                     final isActive =
                         entityKind['status'] == DbHelper.activeStatus;
@@ -1075,7 +1077,7 @@ class _EntityKindsSectionState extends State<_EntityKindsSection> {
                         _loadEntityKindDetail(entityKindId);
                       },
                     );
-                  },
+                  }).toList(),
                 ),
         ),
       ],
@@ -1125,7 +1127,6 @@ class _EntityKindsSectionState extends State<_EntityKindsSection> {
         ),
         const SizedBox(height: 12),
         Container(
-          height: 320,
           padding: const EdgeInsets.all(8),
           decoration: BoxDecoration(
             border: Border.all(color: FluentTheme.of(context).inactiveColor),
@@ -1138,44 +1139,61 @@ class _EntityKindsSectionState extends State<_EntityKindsSection> {
                     'kinds first.',
                   ),
                 )
-              : ListView(
+              : Column(
                   children: visibleComponentKinds.map((componentKind) {
                     final componentKindId = componentKind['id'] as int;
                     final isActive =
                         componentKind['status'] == DbHelper.activeStatus;
+                    final summary = isActive
+                        ? '${_storageLabel(componentKind['storage_type'] as String)}'
+                              ' • '
+                              '${_semanticLabel(componentKind['semantic_type'] as String)}'
+                        : '${_storageLabel(componentKind['storage_type'] as String)}'
+                              ' • '
+                              '${_semanticLabel(componentKind['semantic_type'] as String)}'
+                              ' • soft-deleted';
 
-                    return Checkbox(
-                      checked: _linkedComponentKindIds.contains(
-                        componentKindId,
-                      ),
-                      onChanged: (value) {
-                        final isChecked = value ?? false;
-                        setState(() {
-                          final nextIds = Set<int>.from(
-                            _linkedComponentKindIds,
-                          );
-                          if (isChecked) {
-                            nextIds.add(componentKindId);
-                          } else {
-                            nextIds.remove(componentKindId);
-                          }
-                          _linkedComponentKindIds = nextIds;
-                        });
-                      },
-                      content: Column(
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(componentKind['display_name'] as String),
-                          Text(
-                            isActive
-                                ? '${_storageLabel(componentKind['storage_type'] as String)}'
-                                      ' • '
-                                      '${_semanticLabel(componentKind['semantic_type'] as String)}'
-                                : '${_storageLabel(componentKind['storage_type'] as String)}'
-                                      ' • '
-                                      '${_semanticLabel(componentKind['semantic_type'] as String)}'
-                                      ' • soft-deleted',
-                            style: FluentTheme.of(context).typography.caption,
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Checkbox(
+                              checked: _linkedComponentKindIds.contains(
+                                componentKindId,
+                              ),
+                              onChanged: (value) {
+                                final isChecked = value ?? false;
+                                setState(() {
+                                  final nextIds = Set<int>.from(
+                                    _linkedComponentKindIds,
+                                  );
+                                  if (isChecked) {
+                                    nextIds.add(componentKindId);
+                                  } else {
+                                    nextIds.remove(componentKindId);
+                                  }
+                                  _linkedComponentKindIds = nextIds;
+                                });
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(componentKind['display_name'] as String),
+                                Text(
+                                  summary,
+                                  style: FluentTheme.of(
+                                    context,
+                                  ).typography.caption,
+                                ),
+                              ],
+                            ),
                           ),
                         ],
                       ),
