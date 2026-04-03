@@ -5,6 +5,18 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+const _clockworkProjectKindName = 'project';
+const _clockworkTaskKindName = 'task';
+const _clockworkTimeEntryKindName = 'time_entry';
+
+const _clockworkNameComponentName = 'name';
+const _clockworkParentComponentName = 'parent';
+const _clockworkDurationComponentName = 'duration';
+const _clockworkDateComponentName = 'date';
+const _clockworkNoteComponentName = 'note';
+const _clockworkStartTimeComponentName = 'start_time';
+const _clockworkEndTimeComponentName = 'end_time';
+
 class DbHelper {
   DbHelper({this.dbName = 'clockwork.db', this.databaseDirectory});
 
@@ -982,6 +994,283 @@ class DbHelper {
     return components;
   }
 
+  Future<void> ensureDayPageSetup() async {
+    final database = await db;
+
+    await database.transaction((txn) async {
+      await _ensureDayPageSetupInTransaction(txn);
+    });
+  }
+
+  Future<Map<String, dynamic>> getDayPageData(DateTime date) async {
+    await ensureDayPageSetup();
+
+    final day = _normalizeDayDate(date);
+    final definitions = await _getClockworkDayDefinitions();
+    final results = await Future.wait([
+      getEntitiesWithComponents(kindId: definitions.projectKindId),
+      getEntitiesWithComponents(kindId: definitions.taskKindId),
+      getEntitiesWithComponents(kindId: definitions.timeEntryKindId),
+    ]);
+
+    final rawProjects = results[0];
+    final rawTasks = results[1];
+    final rawTimeEntries = results[2];
+
+    final projects =
+        rawProjects.map((entity) {
+          final projectId = entity['id'] as int;
+          final name =
+              (_componentValueForName(entity, _clockworkNameComponentName)
+                      as String?)
+                  ?.trim();
+
+          return <String, dynamic>{
+            'id': projectId,
+            'name': (name == null || name.isEmpty)
+                ? 'Project #$projectId'
+                : name,
+          };
+        }).toList()..sort((left, right) {
+          final nameCompare = (left['name'] as String).toLowerCase().compareTo(
+            (right['name'] as String).toLowerCase(),
+          );
+          if (nameCompare != 0) {
+            return nameCompare;
+          }
+          return (left['id'] as int).compareTo(right['id'] as int);
+        });
+
+    final projectNamesById = <int, String>{
+      for (final project in projects)
+        project['id'] as int: project['name'] as String,
+    };
+
+    final tasks =
+        rawTasks.map((entity) {
+          final taskId = entity['id'] as int;
+          final name =
+              (_componentValueForName(entity, _clockworkNameComponentName)
+                      as String?)
+                  ?.trim();
+          final projectId =
+              _componentValueForName(entity, _clockworkParentComponentName)
+                  as int?;
+
+          return <String, dynamic>{
+            'id': taskId,
+            'name': (name == null || name.isEmpty) ? 'Task #$taskId' : name,
+            'project_id': projectId,
+            'project_name': projectId == null
+                ? null
+                : projectNamesById[projectId],
+          };
+        }).toList()..sort((left, right) {
+          final projectCompare = ((left['project_name'] as String?) ?? '')
+              .toLowerCase()
+              .compareTo(
+                ((right['project_name'] as String?) ?? '').toLowerCase(),
+              );
+          if (projectCompare != 0) {
+            return projectCompare;
+          }
+
+          final nameCompare = (left['name'] as String).toLowerCase().compareTo(
+            (right['name'] as String).toLowerCase(),
+          );
+          if (nameCompare != 0) {
+            return nameCompare;
+          }
+
+          return (left['id'] as int).compareTo(right['id'] as int);
+        });
+
+    final tasksById = <int, Map<String, dynamic>>{
+      for (final task in tasks) task['id'] as int: task,
+    };
+
+    final entries =
+        rawTimeEntries
+            .where(
+              (entity) =>
+                  _componentValueForName(entity, _clockworkDateComponentName) ==
+                  day.millisecondsSinceEpoch,
+            )
+            .map((entity) {
+              final entryId = entity['id'] as int;
+              final taskId =
+                  _componentValueForName(entity, _clockworkParentComponentName)
+                      as int?;
+              final task = taskId == null ? null : tasksById[taskId];
+              final startMinutes =
+                  _componentValueForName(
+                        entity,
+                        _clockworkStartTimeComponentName,
+                      )
+                      as int?;
+              final endMinutes =
+                  _componentValueForName(entity, _clockworkEndTimeComponentName)
+                      as int?;
+              final duration =
+                  _componentValueForName(
+                        entity,
+                        _clockworkDurationComponentName,
+                      )
+                      as num?;
+              final note =
+                  _componentValueForName(entity, _clockworkNoteComponentName)
+                      as String?;
+
+              return <String, dynamic>{
+                'id': entryId,
+                'project_id': task?['project_id'],
+                'project_name': task?['project_name'],
+                'task_id': taskId,
+                'task_name':
+                    task?['name'] ?? (taskId == null ? null : 'Task #$taskId'),
+                'start_minutes': startMinutes,
+                'end_minutes': endMinutes,
+                'duration_hours': duration?.toDouble(),
+                'note': note ?? '',
+              };
+            })
+            .toList()
+          ..sort((left, right) {
+            final leftStart = left['start_minutes'] as int?;
+            final rightStart = right['start_minutes'] as int?;
+
+            if (leftStart == null && rightStart != null) {
+              return 1;
+            }
+            if (leftStart != null && rightStart == null) {
+              return -1;
+            }
+            if (leftStart != null && rightStart != null) {
+              final compare = leftStart.compareTo(rightStart);
+              if (compare != 0) {
+                return compare;
+              }
+            }
+
+            final taskCompare = ((left['task_name'] as String?) ?? '')
+                .toLowerCase()
+                .compareTo(
+                  ((right['task_name'] as String?) ?? '').toLowerCase(),
+                );
+            if (taskCompare != 0) {
+              return taskCompare;
+            }
+
+            return (left['id'] as int).compareTo(right['id'] as int);
+          });
+
+    return {
+      'date': day.millisecondsSinceEpoch,
+      'projects': projects,
+      'tasks': tasks,
+      'entries': entries,
+    };
+  }
+
+  Future<int> saveDayEntry({
+    required DateTime date,
+    required int projectId,
+    required int taskId,
+    required int startMinutes,
+    required int endMinutes,
+    String? note,
+    int? entryId,
+  }) async {
+    final database = await db;
+    final normalizedDate = _normalizeDayDate(date);
+    final normalizedStartMinutes = _normalizeDayMinutes(
+      startMinutes,
+      'Start time',
+    );
+    final normalizedEndMinutes = _normalizeDayMinutes(endMinutes, 'End time');
+
+    if (normalizedEndMinutes <= normalizedStartMinutes) {
+      throw Exception('End time must be later than start time.');
+    }
+
+    return database.transaction((txn) async {
+      await _ensureDayPageSetupInTransaction(txn);
+      final definitions = await _loadClockworkDayDefinitions(txn);
+
+      final projectEntity = await _requireEntity(txn, projectId);
+      if (projectEntity['kind_id'] != definitions.projectKindId) {
+        throw Exception('Selected project is not a project entity.');
+      }
+
+      final taskEntity = await _requireEntity(txn, taskId);
+      if (taskEntity['kind_id'] != definitions.taskKindId) {
+        throw Exception('Selected task is not a task entity.');
+      }
+
+      final taskProjectId = await _getStoredEntityReferenceValue(
+        txn,
+        entityId: taskId,
+        compKindId: definitions.parentCompKindId,
+      );
+
+      if (taskProjectId == null) {
+        throw Exception('Selected task is not linked to a project.');
+      }
+
+      if (taskProjectId != projectId) {
+        throw Exception(
+          'Selected task does not belong to the selected project.',
+        );
+      }
+
+      final normalizedNote = note?.trim();
+      final durationHours =
+          (normalizedEndMinutes - normalizedStartMinutes) / 60.0;
+      final componentValues = <int, Object?>{
+        definitions.parentCompKindId: taskId,
+        definitions.dateCompKindId: normalizedDate.millisecondsSinceEpoch,
+        definitions.durationCompKindId: durationHours,
+        definitions.startTimeCompKindId: normalizedStartMinutes,
+        definitions.endTimeCompKindId: normalizedEndMinutes,
+        definitions.noteCompKindId:
+            normalizedNote == null || normalizedNote.isEmpty
+            ? null
+            : normalizedNote,
+      };
+
+      if (entryId == null) {
+        await _requireActiveEntityKind(txn, definitions.timeEntryKindId);
+
+        final createdEntryId = await txn.insert('entities', {
+          'kind_id': definitions.timeEntryKindId,
+        });
+
+        await _applyComponentValues(
+          txn,
+          entityKindId: definitions.timeEntryKindId,
+          entityId: createdEntryId,
+          componentValues: componentValues,
+        );
+
+        return createdEntryId;
+      }
+
+      final existingEntry = await _requireEntity(txn, entryId);
+      if (existingEntry['kind_id'] != definitions.timeEntryKindId) {
+        throw Exception('Entity $entryId is not a time entry.');
+      }
+
+      await _applyComponentValues(
+        txn,
+        entityKindId: definitions.timeEntryKindId,
+        entityId: entryId,
+        componentValues: componentValues,
+      );
+
+      return entryId;
+    });
+  }
+
   Future<void> deleteEntity(int entityId) async {
     final database = await db;
 
@@ -1048,6 +1337,297 @@ class DbHelper {
     }
 
     return components;
+  }
+
+  Future<_ClockworkDayDefinitions> _getClockworkDayDefinitions() async {
+    final database = await db;
+    return _loadClockworkDayDefinitions(database);
+  }
+
+  Future<_ClockworkDayDefinitions> _loadClockworkDayDefinitions(
+    DatabaseExecutor db,
+  ) async {
+    final projectKind = await _requireActiveEntityKindByName(
+      db,
+      _clockworkProjectKindName,
+    );
+    final taskKind = await _requireActiveEntityKindByName(
+      db,
+      _clockworkTaskKindName,
+    );
+    final timeEntryKind = await _requireActiveEntityKindByName(
+      db,
+      _clockworkTimeEntryKindName,
+    );
+    final nameCompKind = await _requireActiveCompKindByName(
+      db,
+      _clockworkNameComponentName,
+    );
+    final parentCompKind = await _requireActiveCompKindByName(
+      db,
+      _clockworkParentComponentName,
+    );
+    final durationCompKind = await _requireActiveCompKindByName(
+      db,
+      _clockworkDurationComponentName,
+    );
+    final dateCompKind = await _requireActiveCompKindByName(
+      db,
+      _clockworkDateComponentName,
+    );
+    final noteCompKind = await _requireActiveCompKindByName(
+      db,
+      _clockworkNoteComponentName,
+    );
+    final startTimeCompKind = await _requireActiveCompKindByName(
+      db,
+      _clockworkStartTimeComponentName,
+    );
+    final endTimeCompKind = await _requireActiveCompKindByName(
+      db,
+      _clockworkEndTimeComponentName,
+    );
+
+    return _ClockworkDayDefinitions(
+      projectKindId: projectKind['id'] as int,
+      taskKindId: taskKind['id'] as int,
+      timeEntryKindId: timeEntryKind['id'] as int,
+      nameCompKindId: nameCompKind['id'] as int,
+      parentCompKindId: parentCompKind['id'] as int,
+      durationCompKindId: durationCompKind['id'] as int,
+      dateCompKindId: dateCompKind['id'] as int,
+      noteCompKindId: noteCompKind['id'] as int,
+      startTimeCompKindId: startTimeCompKind['id'] as int,
+      endTimeCompKindId: endTimeCompKind['id'] as int,
+    );
+  }
+
+  Future<void> _ensureDayPageSetupInTransaction(DatabaseExecutor db) async {
+    final timeEntryKind = await _requireActiveEntityKindByName(
+      db,
+      _clockworkTimeEntryKindName,
+    );
+
+    await _requireActiveEntityKindByName(db, _clockworkProjectKindName);
+    await _requireActiveEntityKindByName(db, _clockworkTaskKindName);
+    await _requireActiveCompKindByName(db, _clockworkNameComponentName);
+    await _requireActiveCompKindByName(db, _clockworkParentComponentName);
+    await _requireActiveCompKindByName(db, _clockworkDurationComponentName);
+    await _requireActiveCompKindByName(db, _clockworkDateComponentName);
+    await _requireActiveCompKindByName(db, _clockworkNoteComponentName);
+
+    final startTimeCompKind = await _ensureDayTimeCompKind(
+      db,
+      name: _clockworkStartTimeComponentName,
+      displayName: 'Start Time',
+    );
+    final endTimeCompKind = await _ensureDayTimeCompKind(
+      db,
+      name: _clockworkEndTimeComponentName,
+      displayName: 'End Time',
+    );
+
+    await _ensureEntityKindLink(
+      db,
+      entityKindId: timeEntryKind['id'] as int,
+      compKindId: startTimeCompKind['id'] as int,
+    );
+    await _ensureEntityKindLink(
+      db,
+      entityKindId: timeEntryKind['id'] as int,
+      compKindId: endTimeCompKind['id'] as int,
+    );
+  }
+
+  Future<Map<String, dynamic>> _ensureDayTimeCompKind(
+    DatabaseExecutor db, {
+    required String name,
+    required String displayName,
+  }) async {
+    final existing = await _findCompKindByName(db, name, activeOnly: false);
+
+    if (existing == null) {
+      final compKindId = await db.insert('comp_kinds', {
+        'name': name,
+        'display_name': displayName,
+        'storage_type': storageInteger,
+        'semantic_type': semanticPlain,
+        'status': activeStatus,
+      });
+
+      return {
+        'id': compKindId,
+        'name': name,
+        'display_name': displayName,
+        'storage_type': storageInteger,
+        'semantic_type': semanticPlain,
+        'status': activeStatus,
+      };
+    }
+
+    final hasStoredValues = await _compKindHasStoredValues(
+      db,
+      existing['id'] as int,
+    );
+    final currentStorageType = existing['storage_type'] as String;
+    final currentSemanticType =
+        existing['semantic_type'] as String? ?? semanticPlain;
+
+    if (currentStorageType != storageInteger && hasStoredValues) {
+      throw Exception(
+        'Component kind "$name" must use integer storage for the Day page.',
+      );
+    }
+
+    if (currentSemanticType != semanticPlain && hasStoredValues) {
+      throw Exception(
+        'Component kind "$name" must use the plain semantic type for the Day page.',
+      );
+    }
+
+    await db.update(
+      'comp_kinds',
+      {
+        'display_name': displayName,
+        'storage_type': storageInteger,
+        'semantic_type': semanticPlain,
+        'status': activeStatus,
+      },
+      where: 'id = ?',
+      whereArgs: [existing['id']],
+    );
+
+    return {
+      ...existing,
+      'display_name': displayName,
+      'storage_type': storageInteger,
+      'semantic_type': semanticPlain,
+      'status': activeStatus,
+    };
+  }
+
+  Future<Map<String, dynamic>> _requireActiveEntityKindByName(
+    DatabaseExecutor db,
+    String name,
+  ) async {
+    final entityKind = await _findEntityKindByName(db, name);
+    if (entityKind == null) {
+      throw Exception(
+        'The Day page requires an active entity kind named "$name".',
+      );
+    }
+    return entityKind;
+  }
+
+  Future<Map<String, dynamic>> _requireActiveCompKindByName(
+    DatabaseExecutor db,
+    String name,
+  ) async {
+    final compKind = await _findCompKindByName(db, name);
+    if (compKind == null) {
+      throw Exception(
+        'The Day page requires an active component kind named "$name".',
+      );
+    }
+    return compKind;
+  }
+
+  Future<Map<String, dynamic>?> _findEntityKindByName(
+    DatabaseExecutor db,
+    String name, {
+    bool activeOnly = true,
+  }) async {
+    final rows = await db.query(
+      'entity_kinds',
+      where: activeOnly ? 'name = ? AND status = ?' : 'name = ?',
+      whereArgs: activeOnly ? [name, activeStatus] : [name],
+      limit: 1,
+    );
+
+    if (rows.isEmpty) {
+      return null;
+    }
+
+    return Map<String, dynamic>.from(rows.first);
+  }
+
+  Future<Map<String, dynamic>?> _findCompKindByName(
+    DatabaseExecutor db,
+    String name, {
+    bool activeOnly = true,
+  }) async {
+    final rows = await db.query(
+      'comp_kinds',
+      where: activeOnly ? 'name = ? AND status = ?' : 'name = ?',
+      whereArgs: activeOnly ? [name, activeStatus] : [name],
+      limit: 1,
+    );
+
+    if (rows.isEmpty) {
+      return null;
+    }
+
+    return Map<String, dynamic>.from(rows.first);
+  }
+
+  Future<void> _ensureEntityKindLink(
+    DatabaseExecutor db, {
+    required int entityKindId,
+    required int compKindId,
+  }) async {
+    await db.insert('entity_kind_comp_kinds', {
+      'entity_kind_id': entityKindId,
+      'comp_kind_id': compKindId,
+    }, conflictAlgorithm: ConflictAlgorithm.ignore);
+  }
+
+  Future<int?> _getStoredEntityReferenceValue(
+    DatabaseExecutor db, {
+    required int entityId,
+    required int compKindId,
+  }) async {
+    final rows = await db.query(
+      'entity_comps',
+      columns: ['value'],
+      where: 'entity_id = ? AND kind_id = ?',
+      whereArgs: [entityId, compKindId],
+      limit: 1,
+    );
+
+    if (rows.isEmpty) {
+      return null;
+    }
+
+    return rows.first['value'] as int?;
+  }
+
+  Object? _componentValueForName(
+    Map<String, dynamic> entity,
+    String componentName,
+  ) {
+    final components = List<Map<String, dynamic>>.from(
+      entity['components'] as List<dynamic>? ?? const [],
+    );
+
+    for (final component in components) {
+      if (component['name'] == componentName) {
+        return component['value'];
+      }
+    }
+
+    return null;
+  }
+
+  DateTime _normalizeDayDate(DateTime value) {
+    return DateTime(value.year, value.month, value.day);
+  }
+
+  int _normalizeDayMinutes(int value, String label) {
+    if (value < 0 || value > 1439) {
+      throw Exception('$label must be between 00:00 and 23:59.');
+    }
+
+    return value;
   }
 
   Future<List<Map<String, dynamic>>> _getLinkedComponentDefinitions(
@@ -1781,3 +2361,29 @@ class DbHelper {
 }
 
 final dbHelper = DbHelper();
+
+class _ClockworkDayDefinitions {
+  const _ClockworkDayDefinitions({
+    required this.projectKindId,
+    required this.taskKindId,
+    required this.timeEntryKindId,
+    required this.nameCompKindId,
+    required this.parentCompKindId,
+    required this.durationCompKindId,
+    required this.dateCompKindId,
+    required this.noteCompKindId,
+    required this.startTimeCompKindId,
+    required this.endTimeCompKindId,
+  });
+
+  final int projectKindId;
+  final int taskKindId;
+  final int timeEntryKindId;
+  final int nameCompKindId;
+  final int parentCompKindId;
+  final int durationCompKindId;
+  final int dateCompKindId;
+  final int noteCompKindId;
+  final int startTimeCompKindId;
+  final int endTimeCompKindId;
+}

@@ -4,6 +4,7 @@ import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'day_page.dart';
 import 'db_helper.dart';
 import 'definitions_page.dart';
 import 'entities_page.dart';
@@ -104,9 +105,15 @@ class _ClockworkShellState extends State<ClockworkShell> {
               icon: const Icon(FluentIcons.home),
               title: const Text('Welcome'),
               body: ClockworkWelcomePage(
-                onOpenDefinitions: () => _changeSection(1),
-                onOpenEntities: () => _changeSection(2),
+                onOpenDay: () => _changeSection(1),
+                onOpenDefinitions: () => _changeSection(2),
+                onOpenEntities: () => _changeSection(3),
               ),
+            ),
+            PaneItem(
+              icon: const Icon(FluentIcons.calendar_day),
+              title: const Text('Day'),
+              body: const DayPage(),
             ),
             PaneItem(
               icon: const Icon(FluentIcons.database),
@@ -127,11 +134,13 @@ class _ClockworkShellState extends State<ClockworkShell> {
 
 class ClockworkWelcomePage extends StatelessWidget {
   const ClockworkWelcomePage({
+    required this.onOpenDay,
     required this.onOpenDefinitions,
     required this.onOpenEntities,
     super.key,
   });
 
+  final VoidCallback onOpenDay;
   final VoidCallback onOpenDefinitions;
   final VoidCallback onOpenEntities;
 
@@ -154,6 +163,7 @@ class ClockworkWelcomePage extends StatelessWidget {
             builder: (context, constraints) {
               final isWide = constraints.maxWidth >= 900;
               final intro = _WelcomeIntro(
+                onOpenDay: onOpenDay,
                 onOpenDefinitions: onOpenDefinitions,
                 onOpenEntities: onOpenEntities,
               );
@@ -235,6 +245,10 @@ class ClockworkWelcomePage extends StatelessWidget {
                 text:
                     'The welcome screen now frames the project goals and next areas to build.',
               ),
+              const _ChecklistLine(
+                text:
+                    'A dedicated Day page is now available for quick daily time-entry rows.',
+              ),
             ],
           ),
         ),
@@ -245,10 +259,12 @@ class ClockworkWelcomePage extends StatelessWidget {
 
 class _WelcomeIntro extends StatelessWidget {
   const _WelcomeIntro({
+    required this.onOpenDay,
     required this.onOpenDefinitions,
     required this.onOpenEntities,
   });
 
+  final VoidCallback onOpenDay;
   final VoidCallback onOpenDefinitions;
   final VoidCallback onOpenEntities;
 
@@ -276,6 +292,7 @@ class _WelcomeIntro extends StatelessWidget {
           spacing: 12,
           runSpacing: 12,
           children: [
+            FilledButton(onPressed: onOpenDay, child: const Text('Open Day')),
             FilledButton(
               onPressed: onOpenDefinitions,
               child: const Text('Open Definitions'),

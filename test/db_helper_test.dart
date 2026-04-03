@@ -281,6 +281,108 @@ void main() {
       );
     },
   );
+
+  test('ensureDayPageSetup adds and links missing time fields', () async {
+    final definitions = await _createClockworkDayDefinitions(helper);
+
+    await helper.ensureDayPageSetup();
+
+    final timeEntryCompKinds = await helper.getCompKindsForEntityKind(
+      definitions.timeEntryKindId,
+    );
+    final timeEntryCompKindNames = timeEntryCompKinds
+        .map((componentKind) => componentKind['name'] as String)
+        .toList();
+
+    expect(
+      timeEntryCompKindNames,
+      containsAll([
+        'parent',
+        'duration',
+        'date',
+        'note',
+        'start_time',
+        'end_time',
+      ]),
+    );
+
+    final allCompKinds = await helper.getAllCompKinds();
+    final startTime = allCompKinds.singleWhere(
+      (componentKind) => componentKind['name'] == 'start_time',
+    );
+    final endTime = allCompKinds.singleWhere(
+      (componentKind) => componentKind['name'] == 'end_time',
+    );
+
+    expect(startTime['storage_type'], DbHelper.storageInteger);
+    expect(endTime['storage_type'], DbHelper.storageInteger);
+  });
+
+  test('saveDayEntry stores and updates project task time rows', () async {
+    final definitions = await _createClockworkDayDefinitions(helper);
+
+    final projectId = await helper.createEntity(
+      kindId: definitions.projectKindId,
+      componentValues: {definitions.nameCompKindId: 'Project Atlas'},
+    );
+    final taskId = await helper.createEntity(
+      kindId: definitions.taskKindId,
+      componentValues: {
+        definitions.nameCompKindId: 'Client Workshop',
+        definitions.parentCompKindId: projectId,
+      },
+    );
+
+    final entryId = await helper.saveDayEntry(
+      date: DateTime(2026, 4, 3),
+      projectId: projectId,
+      taskId: taskId,
+      startMinutes: 9 * 60,
+      endMinutes: 10 * 60 + 30,
+      note: 'Discovery session',
+    );
+
+    var entity = await helper.getEntity(entryId);
+    expect(entity, isNotNull);
+    expect(_valueForComponent(entity!, 'parent'), taskId);
+    expect(
+      _valueForComponent(entity, 'date'),
+      DateTime(2026, 4, 3).millisecondsSinceEpoch,
+    );
+    expect(_valueForComponent(entity, 'duration'), 1.5);
+    expect(_valueForComponent(entity, 'start_time'), 540);
+    expect(_valueForComponent(entity, 'end_time'), 630);
+    expect(_valueForComponent(entity, 'note'), 'Discovery session');
+
+    await helper.saveDayEntry(
+      entryId: entryId,
+      date: DateTime(2026, 4, 3),
+      projectId: projectId,
+      taskId: taskId,
+      startMinutes: 9 * 60,
+      endMinutes: 11 * 60,
+      note: 'Workshop extended',
+    );
+
+    final dayData = await helper.getDayPageData(DateTime(2026, 4, 3));
+    final entries = List<Map<String, dynamic>>.from(
+      dayData['entries'] as List<dynamic>? ?? const [],
+    );
+
+    expect(entries, hasLength(1));
+    expect(entries.single['project_id'], projectId);
+    expect(entries.single['task_id'], taskId);
+    expect(entries.single['start_minutes'], 540);
+    expect(entries.single['end_minutes'], 660);
+    expect(entries.single['duration_hours'], 2.0);
+    expect(entries.single['note'], 'Workshop extended');
+
+    entity = await helper.getEntity(entryId);
+    expect(entity, isNotNull);
+    expect(_valueForComponent(entity!, 'duration'), 2.0);
+    expect(_valueForComponent(entity, 'end_time'), 660);
+    expect(_valueForComponent(entity, 'note'), 'Workshop extended');
+  });
 }
 
 Object? _valueForComponent(Map<String, dynamic> entity, String componentName) {
@@ -317,4 +419,80 @@ Future<int> _countRows(
   }
 
   return int.tryParse(value.toString()) ?? 0;
+}
+
+Future<_ClockworkDayTestDefinitions> _createClockworkDayDefinitions(
+  DbHelper helper,
+) async {
+  final nameCompKindId = await helper.createCompKind(
+    name: 'name',
+    displayName: 'Name',
+    storageType: DbHelper.storageText,
+  );
+  final parentCompKindId = await helper.createCompKind(
+    name: 'parent',
+    displayName: 'Parent',
+    storageType: DbHelper.storageEntity,
+  );
+  final durationCompKindId = await helper.createCompKind(
+    name: 'duration',
+    displayName: 'Duration',
+    storageType: DbHelper.storageReal,
+  );
+  final dateCompKindId = await helper.createCompKind(
+    name: 'date',
+    displayName: 'Date',
+    storageType: DbHelper.storageInteger,
+    semanticType: DbHelper.semanticDate,
+  );
+  final noteCompKindId = await helper.createCompKind(
+    name: 'note',
+    displayName: 'Note',
+    storageType: DbHelper.storageText,
+  );
+
+  final projectKindId = await helper.createEntityKind(
+    name: 'project',
+    displayName: 'Project',
+    compKindIds: [nameCompKindId],
+  );
+  final taskKindId = await helper.createEntityKind(
+    name: 'task',
+    displayName: 'Task',
+    compKindIds: [nameCompKindId, parentCompKindId],
+  );
+  final timeEntryKindId = await helper.createEntityKind(
+    name: 'time_entry',
+    displayName: 'Time Entry',
+    compKindIds: [
+      parentCompKindId,
+      durationCompKindId,
+      dateCompKindId,
+      noteCompKindId,
+    ],
+  );
+
+  return _ClockworkDayTestDefinitions(
+    nameCompKindId: nameCompKindId,
+    parentCompKindId: parentCompKindId,
+    projectKindId: projectKindId,
+    taskKindId: taskKindId,
+    timeEntryKindId: timeEntryKindId,
+  );
+}
+
+class _ClockworkDayTestDefinitions {
+  const _ClockworkDayTestDefinitions({
+    required this.nameCompKindId,
+    required this.parentCompKindId,
+    required this.projectKindId,
+    required this.taskKindId,
+    required this.timeEntryKindId,
+  });
+
+  final int nameCompKindId;
+  final int parentCompKindId;
+  final int projectKindId;
+  final int taskKindId;
+  final int timeEntryKindId;
 }
