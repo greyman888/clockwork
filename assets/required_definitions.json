@@ -1,0 +1,85 @@
+{
+  "manifest_version": 1,
+  "component_kinds": [
+    {
+      "name": "name",
+      "display_name": "Name",
+      "storage_type": "text",
+      "semantic_type": "plain"
+    },
+    {
+      "name": "parent",
+      "display_name": "Parent",
+      "storage_type": "entity",
+      "semantic_type": "entity_reference"
+    },
+    {
+      "name": "duration",
+      "display_name": "Duration",
+      "storage_type": "real",
+      "semantic_type": "plain"
+    },
+    {
+      "name": "date",
+      "display_name": "Date",
+      "storage_type": "integer",
+      "semantic_type": "date"
+    },
+    {
+      "name": "note",
+      "display_name": "Note",
+      "storage_type": "text",
+      "semantic_type": "plain"
+    },
+    {
+      "name": "start_time",
+      "display_name": "Start Time",
+      "storage_type": "integer",
+      "semantic_type": "plain"
+    },
+    {
+      "name": "end_time",
+      "display_name": "End Time",
+      "storage_type": "integer",
+      "semantic_type": "plain"
+    }
+  ],
+  "entity_kinds": [
+    {
+      "name": "project",
+      "display_name": "Project",
+      "components": ["name"]
+    },
+    {
+      "name": "task",
+      "display_name": "Task",
+      "components": ["name", "parent"]
+    },
+    {
+      "name": "time_entry",
+      "display_name": "Time Entry",
+      "components": [
+        "parent",
+        "duration",
+        "date",
+        "note",
+        "start_time",
+        "end_time"
+      ]
+    }
+  ],
+  "features": {
+    "day_page": {
+      "project_kind": "project",
+      "task_kind": "task",
+      "time_entry_kind": "time_entry",
+      "name_component": "name",
+      "parent_component": "parent",
+      "duration_component": "duration",
+      "date_component": "date",
+      "note_component": "note",
+      "start_time_component": "start_time",
+      "end_time_component": "end_time"
+    }
+  }
+}

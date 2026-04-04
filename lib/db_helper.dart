@@ -1,28 +1,37 @@
+import 'dart:convert';
 import 'dart:developer' as developer;
 import 'dart:io';
 
 import 'package:path/path.dart' as path;
-import 'package:path_provider/path_provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
-
-const _clockworkProjectKindName = 'project';
-const _clockworkTaskKindName = 'task';
-const _clockworkTimeEntryKindName = 'time_entry';
-
-const _clockworkNameComponentName = 'name';
-const _clockworkParentComponentName = 'parent';
-const _clockworkDurationComponentName = 'duration';
-const _clockworkDateComponentName = 'date';
-const _clockworkNoteComponentName = 'note';
-const _clockworkStartTimeComponentName = 'start_time';
-const _clockworkEndTimeComponentName = 'end_time';
+import 'required_definitions.dart';
 
 class DbHelper {
-  DbHelper({this.dbName = 'clockwork.db', this.databaseDirectory});
+  DbHelper({
+    this.dbName = 'clockwork.db',
+    this.databaseDirectory,
+    Future<String> Function()? requiredDefinitionsLoader,
+  }) : _requiredDefinitionsLoader =
+           requiredDefinitionsLoader ??
+           (() => File(requiredDefinitionsAssetPath).readAsString());
+
+  factory DbHelper.forFilePath({
+    required String dbPath,
+    Future<String> Function()? requiredDefinitionsLoader,
+  }) {
+    final normalizedPath = path.normalize(dbPath);
+    return DbHelper(
+      dbName: path.basename(normalizedPath),
+      databaseDirectory: path.dirname(normalizedPath),
+      requiredDefinitionsLoader: requiredDefinitionsLoader,
+    );
+  }
 
   static const int _schemaVersion = 2;
 
   Database? _db;
+  final Future<String> Function() _requiredDefinitionsLoader;
+  RequiredDefinitionsManifest? _requiredDefinitionsManifest;
 
   static const int activeStatus = 1;
   static const int deletedStatus = 0;
@@ -67,15 +76,9 @@ class DbHelper {
       return databaseDirectory!;
     }
 
-    try {
-      final supportDir = await getApplicationSupportDirectory();
-      await Directory(supportDir.path).create(recursive: true);
-      return supportDir.path;
-    } catch (_) {
-      final dbDir = await getDatabasesPath();
-      await Directory(dbDir).create(recursive: true);
-      return dbDir;
-    }
+    final supportDirPath = _defaultDatabaseDirectoryPath();
+    await Directory(supportDirPath).create(recursive: true);
+    return supportDirPath;
   }
 
   Future<Database> _initDb() async {
@@ -994,16 +997,17 @@ class DbHelper {
     return components;
   }
 
-  Future<void> ensureDayPageSetup() async {
+  Future<void> ensureRequiredDefinitions() async {
+    final manifest = await _getRequiredDefinitionsManifest();
     final database = await db;
 
     await database.transaction((txn) async {
-      await _ensureDayPageSetupInTransaction(txn);
+      await _ensureRequiredDefinitionsInTransaction(txn, manifest);
     });
   }
 
   Future<Map<String, dynamic>> getDayPageData(DateTime date) async {
-    await ensureDayPageSetup();
+    await ensureRequiredDefinitions();
 
     final day = _normalizeDayDate(date);
     final definitions = await _getClockworkDayDefinitions();
@@ -1021,7 +1025,7 @@ class DbHelper {
         rawProjects.map((entity) {
           final projectId = entity['id'] as int;
           final name =
-              (_componentValueForName(entity, _clockworkNameComponentName)
+              (_componentValueForKindId(entity, definitions.nameCompKindId)
                       as String?)
                   ?.trim();
 
@@ -1050,11 +1054,11 @@ class DbHelper {
         rawTasks.map((entity) {
           final taskId = entity['id'] as int;
           final name =
-              (_componentValueForName(entity, _clockworkNameComponentName)
+              (_componentValueForKindId(entity, definitions.nameCompKindId)
                       as String?)
                   ?.trim();
           final projectId =
-              _componentValueForName(entity, _clockworkParentComponentName)
+              _componentValueForKindId(entity, definitions.parentCompKindId)
                   as int?;
 
           return <String, dynamic>{
@@ -1093,32 +1097,38 @@ class DbHelper {
         rawTimeEntries
             .where(
               (entity) =>
-                  _componentValueForName(entity, _clockworkDateComponentName) ==
+                  _componentValueForKindId(
+                    entity,
+                    definitions.dateCompKindId,
+                  ) ==
                   day.millisecondsSinceEpoch,
             )
             .map((entity) {
               final entryId = entity['id'] as int;
               final taskId =
-                  _componentValueForName(entity, _clockworkParentComponentName)
+                  _componentValueForKindId(entity, definitions.parentCompKindId)
                       as int?;
               final task = taskId == null ? null : tasksById[taskId];
               final startMinutes =
-                  _componentValueForName(
+                  _componentValueForKindId(
                         entity,
-                        _clockworkStartTimeComponentName,
+                        definitions.startTimeCompKindId,
                       )
                       as int?;
               final endMinutes =
-                  _componentValueForName(entity, _clockworkEndTimeComponentName)
+                  _componentValueForKindId(
+                        entity,
+                        definitions.endTimeCompKindId,
+                      )
                       as int?;
               final duration =
-                  _componentValueForName(
+                  _componentValueForKindId(
                         entity,
-                        _clockworkDurationComponentName,
+                        definitions.durationCompKindId,
                       )
                       as num?;
               final note =
-                  _componentValueForName(entity, _clockworkNoteComponentName)
+                  _componentValueForKindId(entity, definitions.noteCompKindId)
                       as String?;
 
               return <String, dynamic>{
@@ -1193,9 +1203,11 @@ class DbHelper {
       throw Exception('End time must be later than start time.');
     }
 
+    final manifest = await _getRequiredDefinitionsManifest();
+
     return database.transaction((txn) async {
-      await _ensureDayPageSetupInTransaction(txn);
-      final definitions = await _loadClockworkDayDefinitions(txn);
+      await _ensureRequiredDefinitionsInTransaction(txn, manifest);
+      final definitions = await _loadClockworkDayDefinitions(txn, manifest);
 
       final projectEntity = await _requireEntity(txn, projectId);
       if (projectEntity['kind_id'] != definitions.projectKindId) {
@@ -1340,52 +1352,75 @@ class DbHelper {
   }
 
   Future<_ClockworkDayDefinitions> _getClockworkDayDefinitions() async {
+    final manifest = await _getRequiredDefinitionsManifest();
     final database = await db;
-    return _loadClockworkDayDefinitions(database);
+    return _loadClockworkDayDefinitions(database, manifest);
+  }
+
+  Future<RequiredDefinitionsManifest> _getRequiredDefinitionsManifest() async {
+    final cachedManifest = _requiredDefinitionsManifest;
+    if (cachedManifest != null) {
+      return cachedManifest;
+    }
+
+    final rawManifest = await _requiredDefinitionsLoader();
+    final decodedManifest = jsonDecode(rawManifest);
+
+    if (decodedManifest is! Map<String, dynamic>) {
+      throw Exception(
+        'The required definitions manifest must be a top-level JSON object.',
+      );
+    }
+
+    final manifest = RequiredDefinitionsManifest.fromJson(decodedManifest);
+    _requiredDefinitionsManifest = manifest;
+    return manifest;
   }
 
   Future<_ClockworkDayDefinitions> _loadClockworkDayDefinitions(
     DatabaseExecutor db,
+    RequiredDefinitionsManifest manifest,
   ) async {
+    final dayPage = manifest.dayPage;
     final projectKind = await _requireActiveEntityKindByName(
       db,
-      _clockworkProjectKindName,
+      dayPage.projectKindName,
     );
     final taskKind = await _requireActiveEntityKindByName(
       db,
-      _clockworkTaskKindName,
+      dayPage.taskKindName,
     );
     final timeEntryKind = await _requireActiveEntityKindByName(
       db,
-      _clockworkTimeEntryKindName,
+      dayPage.timeEntryKindName,
     );
     final nameCompKind = await _requireActiveCompKindByName(
       db,
-      _clockworkNameComponentName,
+      dayPage.nameCompKindName,
     );
     final parentCompKind = await _requireActiveCompKindByName(
       db,
-      _clockworkParentComponentName,
+      dayPage.parentCompKindName,
     );
     final durationCompKind = await _requireActiveCompKindByName(
       db,
-      _clockworkDurationComponentName,
+      dayPage.durationCompKindName,
     );
     final dateCompKind = await _requireActiveCompKindByName(
       db,
-      _clockworkDateComponentName,
+      dayPage.dateCompKindName,
     );
     final noteCompKind = await _requireActiveCompKindByName(
       db,
-      _clockworkNoteComponentName,
+      dayPage.noteCompKindName,
     );
     final startTimeCompKind = await _requireActiveCompKindByName(
       db,
-      _clockworkStartTimeComponentName,
+      dayPage.startTimeCompKindName,
     );
     final endTimeCompKind = await _requireActiveCompKindByName(
       db,
-      _clockworkEndTimeComponentName,
+      dayPage.endTimeCompKindName,
     );
 
     return _ClockworkDayDefinitions(
@@ -1402,108 +1437,237 @@ class DbHelper {
     );
   }
 
-  Future<void> _ensureDayPageSetupInTransaction(DatabaseExecutor db) async {
-    final timeEntryKind = await _requireActiveEntityKindByName(
-      db,
-      _clockworkTimeEntryKindName,
-    );
+  Future<void> _ensureRequiredDefinitionsInTransaction(
+    DatabaseExecutor db,
+    RequiredDefinitionsManifest manifest,
+  ) async {
+    final compKindIdsByName = <String, int>{};
 
-    await _requireActiveEntityKindByName(db, _clockworkProjectKindName);
-    await _requireActiveEntityKindByName(db, _clockworkTaskKindName);
-    await _requireActiveCompKindByName(db, _clockworkNameComponentName);
-    await _requireActiveCompKindByName(db, _clockworkParentComponentName);
-    await _requireActiveCompKindByName(db, _clockworkDurationComponentName);
-    await _requireActiveCompKindByName(db, _clockworkDateComponentName);
-    await _requireActiveCompKindByName(db, _clockworkNoteComponentName);
+    for (final compKindDefinition in manifest.componentKinds) {
+      final compKind = await _upsertRequiredCompKind(db, compKindDefinition);
+      final compKindId = compKind['id'] as int;
+      compKindIdsByName[compKindDefinition.name] = compKindId;
 
-    final startTimeCompKind = await _ensureDayTimeCompKind(
-      db,
-      name: _clockworkStartTimeComponentName,
-      displayName: 'Start Time',
-    );
-    final endTimeCompKind = await _ensureDayTimeCompKind(
-      db,
-      name: _clockworkEndTimeComponentName,
-      displayName: 'End Time',
-    );
+      await _syncRequiredEnumOptions(
+        db,
+        compKindId: compKindId,
+        definition: compKindDefinition,
+      );
+    }
 
-    await _ensureEntityKindLink(
-      db,
-      entityKindId: timeEntryKind['id'] as int,
-      compKindId: startTimeCompKind['id'] as int,
-    );
-    await _ensureEntityKindLink(
-      db,
-      entityKindId: timeEntryKind['id'] as int,
-      compKindId: endTimeCompKind['id'] as int,
-    );
+    for (final entityKindDefinition in manifest.entityKinds) {
+      final requiredCompKindIds = entityKindDefinition.componentNames.map((
+        componentName,
+      ) {
+        final compKindId = compKindIdsByName[componentName];
+        if (compKindId == null) {
+          throw Exception(
+            'Required entity kind "${entityKindDefinition.name}" '
+            'references unknown component kind "$componentName".',
+          );
+        }
+        return compKindId;
+      }).toList();
+
+      await _upsertRequiredEntityKind(
+        db,
+        definition: entityKindDefinition,
+        requiredCompKindIds: requiredCompKindIds,
+      );
+    }
+
+    await _loadClockworkDayDefinitions(db, manifest);
   }
 
-  Future<Map<String, dynamic>> _ensureDayTimeCompKind(
-    DatabaseExecutor db, {
-    required String name,
-    required String displayName,
-  }) async {
-    final existing = await _findCompKindByName(db, name, activeOnly: false);
+  Future<Map<String, dynamic>> _upsertRequiredCompKind(
+    DatabaseExecutor db,
+    RequiredCompKindDefinition definition,
+  ) async {
+    final normalizedName = _normalizeRequiredText(
+      definition.name,
+      'Required component kind name',
+    );
+    final normalizedDisplayName = _normalizeRequiredText(
+      definition.displayName,
+      'Required component kind display name',
+    );
+    final normalizedStorageType = _normalizeStorageType(definition.storageType);
+    final resolvedSemanticType = _resolveSemanticType(
+      normalizedStorageType,
+      definition.semanticType,
+    );
+
+    _ensureSemanticTypeIsCompatible(
+      normalizedStorageType,
+      resolvedSemanticType,
+    );
+
+    final existing = await _findCompKindByName(
+      db,
+      normalizedName,
+      activeOnly: false,
+    );
 
     if (existing == null) {
       final compKindId = await db.insert('comp_kinds', {
-        'name': name,
-        'display_name': displayName,
-        'storage_type': storageInteger,
-        'semantic_type': semanticPlain,
+        'name': normalizedName,
+        'display_name': normalizedDisplayName,
+        'storage_type': normalizedStorageType,
+        'semantic_type': resolvedSemanticType,
         'status': activeStatus,
       });
 
       return {
         'id': compKindId,
-        'name': name,
-        'display_name': displayName,
-        'storage_type': storageInteger,
-        'semantic_type': semanticPlain,
+        'name': normalizedName,
+        'display_name': normalizedDisplayName,
+        'storage_type': normalizedStorageType,
+        'semantic_type': resolvedSemanticType,
         'status': activeStatus,
       };
     }
 
-    final hasStoredValues = await _compKindHasStoredValues(
-      db,
-      existing['id'] as int,
-    );
-    final currentStorageType = existing['storage_type'] as String;
-    final currentSemanticType =
-        existing['semantic_type'] as String? ?? semanticPlain;
+    final existingId = existing['id'] as int;
+    final previousStorageType = existing['storage_type'] as String;
 
-    if (currentStorageType != storageInteger && hasStoredValues) {
-      throw Exception(
-        'Component kind "$name" must use integer storage for the Day page.',
-      );
-    }
-
-    if (currentSemanticType != semanticPlain && hasStoredValues) {
-      throw Exception(
-        'Component kind "$name" must use the plain semantic type for the Day page.',
-      );
+    if (previousStorageType != normalizedStorageType) {
+      final hasStoredValues = await _compKindHasStoredValues(db, existingId);
+      if (hasStoredValues) {
+        throw Exception(
+          'Required component kind "$normalizedName" cannot change storage '
+          'type because stored values already exist.',
+        );
+      }
     }
 
     await db.update(
       'comp_kinds',
       {
-        'display_name': displayName,
-        'storage_type': storageInteger,
-        'semantic_type': semanticPlain,
+        'display_name': normalizedDisplayName,
+        'storage_type': normalizedStorageType,
+        'semantic_type': resolvedSemanticType,
         'status': activeStatus,
       },
       where: 'id = ?',
-      whereArgs: [existing['id']],
+      whereArgs: [existingId],
     );
+
+    if (resolvedSemanticType != semanticEnum) {
+      await db.delete(
+        'comp_kind_enum_options',
+        where: 'comp_kind_id = ?',
+        whereArgs: [existingId],
+      );
+    }
 
     return {
       ...existing,
-      'display_name': displayName,
-      'storage_type': storageInteger,
-      'semantic_type': semanticPlain,
+      'display_name': normalizedDisplayName,
+      'storage_type': normalizedStorageType,
+      'semantic_type': resolvedSemanticType,
       'status': activeStatus,
     };
+  }
+
+  Future<void> _syncRequiredEnumOptions(
+    DatabaseExecutor db, {
+    required int compKindId,
+    required RequiredCompKindDefinition definition,
+  }) async {
+    if (definition.enumOptions.isEmpty) {
+      return;
+    }
+
+    await _requireEnumCompKind(db, compKindId);
+    final existingOptions = await db.query(
+      'comp_kind_enum_options',
+      where: 'comp_kind_id = ?',
+      whereArgs: [compKindId],
+    );
+    final existingOptionsByValue = <String, Map<String, dynamic>>{
+      for (final row in existingOptions)
+        row['value'] as String: Map<String, dynamic>.from(row),
+    };
+
+    for (final enumOptionDefinition in definition.enumOptions) {
+      final normalizedValue = _normalizeRequiredText(
+        enumOptionDefinition.value,
+        'Required enum option value',
+      );
+      final normalizedDisplayLabel = _normalizeRequiredText(
+        enumOptionDefinition.displayLabel,
+        'Required enum option display label',
+      );
+      final normalizedSortOrder = _normalizeSortOrder(
+        enumOptionDefinition.sortOrder,
+      );
+      final existingOption = existingOptionsByValue[normalizedValue];
+
+      if (existingOption == null) {
+        await db.insert('comp_kind_enum_options', {
+          'comp_kind_id': compKindId,
+          'value': normalizedValue,
+          'display_label': normalizedDisplayLabel,
+          'sort_order': normalizedSortOrder,
+        });
+        continue;
+      }
+
+      await db.update(
+        'comp_kind_enum_options',
+        {
+          'display_label': normalizedDisplayLabel,
+          'sort_order': normalizedSortOrder,
+        },
+        where: 'id = ?',
+        whereArgs: [existingOption['id']],
+      );
+    }
+  }
+
+  Future<void> _upsertRequiredEntityKind(
+    DatabaseExecutor db, {
+    required RequiredEntityKindDefinition definition,
+    required List<int> requiredCompKindIds,
+  }) async {
+    final normalizedName = _normalizeRequiredText(
+      definition.name,
+      'Required entity kind name',
+    );
+    final normalizedDisplayName = _normalizeRequiredText(
+      definition.displayName,
+      'Required entity kind display name',
+    );
+    final existing = await _findEntityKindByName(
+      db,
+      normalizedName,
+      activeOnly: false,
+    );
+
+    late final int entityKindId;
+    if (existing == null) {
+      entityKindId = await db.insert('entity_kinds', {
+        'name': normalizedName,
+        'display_name': normalizedDisplayName,
+        'status': activeStatus,
+      });
+    } else {
+      entityKindId = existing['id'] as int;
+      await db.update(
+        'entity_kinds',
+        {'display_name': normalizedDisplayName, 'status': activeStatus},
+        where: 'id = ?',
+        whereArgs: [entityKindId],
+      );
+    }
+
+    for (final compKindId in requiredCompKindIds) {
+      await _ensureEntityKindLink(
+        db,
+        entityKindId: entityKindId,
+        compKindId: compKindId,
+      );
+    }
   }
 
   Future<Map<String, dynamic>> _requireActiveEntityKindByName(
@@ -1512,9 +1676,7 @@ class DbHelper {
   ) async {
     final entityKind = await _findEntityKindByName(db, name);
     if (entityKind == null) {
-      throw Exception(
-        'The Day page requires an active entity kind named "$name".',
-      );
+      throw Exception('Required entity kind "$name" is missing or inactive.');
     }
     return entityKind;
   }
@@ -1526,7 +1688,7 @@ class DbHelper {
     final compKind = await _findCompKindByName(db, name);
     if (compKind == null) {
       throw Exception(
-        'The Day page requires an active component kind named "$name".',
+        'Required component kind "$name" is missing or inactive.',
       );
     }
     return compKind;
@@ -1601,16 +1763,16 @@ class DbHelper {
     return rows.first['value'] as int?;
   }
 
-  Object? _componentValueForName(
+  Object? _componentValueForKindId(
     Map<String, dynamic> entity,
-    String componentName,
+    int compKindId,
   ) {
     final components = List<Map<String, dynamic>>.from(
       entity['components'] as List<dynamic>? ?? const [],
     );
 
     for (final component in components) {
-      if (component['name'] == componentName) {
+      if (component['id'] == compKindId) {
         return component['value'];
       }
     }
@@ -2358,9 +2520,38 @@ class DbHelper {
     await database.close();
     _db = null;
   }
-}
 
-final dbHelper = DbHelper();
+  String _defaultDatabaseDirectoryPath() {
+    if (Platform.isWindows) {
+      final appData = Platform.environment['APPDATA'];
+      if (appData != null && appData.trim().isNotEmpty) {
+        return path.join(appData, 'com.example', 'clockwork');
+      }
+    }
+
+    final homePath = Platform.environment['HOME'];
+
+    if (Platform.isMacOS && homePath != null && homePath.trim().isNotEmpty) {
+      return path.join(
+        homePath,
+        'Library',
+        'Application Support',
+        'com.example.clockwork',
+      );
+    }
+
+    if (Platform.isLinux && homePath != null && homePath.trim().isNotEmpty) {
+      final xdgDataHome = Platform.environment['XDG_DATA_HOME'];
+      if (xdgDataHome != null && xdgDataHome.trim().isNotEmpty) {
+        return path.join(xdgDataHome, 'com.example.clockwork');
+      }
+
+      return path.join(homePath, '.local', 'share', 'com.example.clockwork');
+    }
+
+    return path.join(Directory.current.path, '.clockwork');
+  }
+}
 
 class _ClockworkDayDefinitions {
   const _ClockworkDayDefinitions({

@@ -4,8 +4,8 @@ import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'app_db.dart';
 import 'day_page.dart';
-import 'db_helper.dart';
 import 'definitions_page.dart';
 import 'entities_page.dart';
 
@@ -20,7 +20,7 @@ Future<void> main() async {
     databaseFactory = databaseFactoryFfi;
   }
 
-  await dbHelper.db;
+  await dbHelper.ensureRequiredDefinitions();
 
   runApp(const MainApp());
 }

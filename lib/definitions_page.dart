@@ -1,6 +1,6 @@
 import 'package:fluent_ui/fluent_ui.dart';
 
-import 'db_helper.dart';
+import 'app_db.dart';
 import 'editor_helpers.dart';
 import 'editor_widgets.dart';
 

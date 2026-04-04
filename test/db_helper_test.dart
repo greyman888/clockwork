@@ -282,44 +282,123 @@ void main() {
     },
   );
 
-  test('ensureDayPageSetup adds and links missing time fields', () async {
-    final definitions = await _createClockworkDayDefinitions(helper);
+  test(
+    'ensureRequiredDefinitions imports bundled definitions idempotently',
+    () async {
+      await helper.ensureRequiredDefinitions();
+      await helper.ensureRequiredDefinitions();
 
-    await helper.ensureDayPageSetup();
+      final allCompKinds = await helper.getAllCompKinds();
+      final allEntityKinds = await helper.getAllEntityKinds();
+      final timeEntryKindId = _entityKindIdByName(allEntityKinds, 'time_entry');
+      final timeEntryCompKinds = await helper.getCompKindsForEntityKind(
+        timeEntryKindId,
+      );
+      final timeEntryCompKindNames = timeEntryCompKinds
+          .map((componentKind) => componentKind['name'] as String)
+          .toList();
 
-    final timeEntryCompKinds = await helper.getCompKindsForEntityKind(
-      definitions.timeEntryKindId,
-    );
-    final timeEntryCompKindNames = timeEntryCompKinds
-        .map((componentKind) => componentKind['name'] as String)
-        .toList();
+      expect(
+        allCompKinds.map((componentKind) => componentKind['name'] as String),
+        containsAll([
+          'name',
+          'parent',
+          'duration',
+          'date',
+          'note',
+          'start_time',
+          'end_time',
+        ]),
+      );
+      expect(
+        allEntityKinds.map((entityKind) => entityKind['name'] as String),
+        containsAll(['project', 'task', 'time_entry']),
+      );
+      expect(
+        timeEntryCompKindNames,
+        containsAll([
+          'parent',
+          'duration',
+          'date',
+          'note',
+          'start_time',
+          'end_time',
+        ]),
+      );
+    },
+  );
 
-    expect(
-      timeEntryCompKindNames,
-      containsAll([
-        'parent',
-        'duration',
-        'date',
-        'note',
-        'start_time',
-        'end_time',
-      ]),
-    );
+  test(
+    'ensureRequiredDefinitions restores soft-deleted required definitions',
+    () async {
+      await helper.ensureRequiredDefinitions();
 
-    final allCompKinds = await helper.getAllCompKinds();
-    final startTime = allCompKinds.singleWhere(
-      (componentKind) => componentKind['name'] == 'start_time',
-    );
-    final endTime = allCompKinds.singleWhere(
-      (componentKind) => componentKind['name'] == 'end_time',
-    );
+      final allCompKinds = await helper.getAllCompKinds();
+      final allEntityKinds = await helper.getAllEntityKinds();
+      final startTimeCompKindId = _compKindIdByName(allCompKinds, 'start_time');
+      final timeEntryKindId = _entityKindIdByName(allEntityKinds, 'time_entry');
 
-    expect(startTime['storage_type'], DbHelper.storageInteger);
-    expect(endTime['storage_type'], DbHelper.storageInteger);
-  });
+      await helper.softDeleteCompKind(startTimeCompKindId);
+      await helper.softDeleteEntityKind(timeEntryKindId);
+
+      await helper.ensureRequiredDefinitions();
+
+      final restoredCompKinds = await helper.getAllCompKinds();
+      final restoredEntityKinds = await helper.getAllEntityKinds();
+
+      expect(
+        restoredCompKinds.map(
+          (componentKind) => componentKind['name'] as String,
+        ),
+        contains('start_time'),
+      );
+      expect(
+        restoredEntityKinds.map((entityKind) => entityKind['name'] as String),
+        contains('time_entry'),
+      );
+    },
+  );
+
+  test(
+    'ensureRequiredDefinitions preserves extra links on required entity kinds',
+    () async {
+      final definitions = await _loadRequiredDayDefinitions(helper);
+      final extraCompKindId = await helper.createCompKind(
+        name: 'billable_code',
+        displayName: 'Billable Code',
+        storageType: DbHelper.storageText,
+      );
+      final timeEntryKind = await helper.getEntityKind(
+        definitions.timeEntryKindId,
+      );
+
+      await helper.updateEntityKind(
+        id: definitions.timeEntryKindId,
+        name: 'time_entry',
+        displayName: 'Time Entry',
+        compKindIds: [
+          ...(timeEntryKind?['comp_kind_ids'] as List<dynamic>).cast<int>(),
+          extraCompKindId,
+        ],
+      );
+
+      await helper.ensureRequiredDefinitions();
+
+      final timeEntryCompKinds = await helper.getCompKindsForEntityKind(
+        definitions.timeEntryKindId,
+      );
+
+      expect(
+        timeEntryCompKinds.map(
+          (componentKind) => componentKind['name'] as String,
+        ),
+        contains('billable_code'),
+      );
+    },
+  );
 
   test('saveDayEntry stores and updates project task time rows', () async {
-    final definitions = await _createClockworkDayDefinitions(helper);
+    final definitions = await _loadRequiredDayDefinitions(helper);
 
     final projectId = await helper.createEntity(
       kindId: definitions.projectKindId,
@@ -421,56 +500,18 @@ Future<int> _countRows(
   return int.tryParse(value.toString()) ?? 0;
 }
 
-Future<_ClockworkDayTestDefinitions> _createClockworkDayDefinitions(
+Future<_ClockworkDayTestDefinitions> _loadRequiredDayDefinitions(
   DbHelper helper,
 ) async {
-  final nameCompKindId = await helper.createCompKind(
-    name: 'name',
-    displayName: 'Name',
-    storageType: DbHelper.storageText,
-  );
-  final parentCompKindId = await helper.createCompKind(
-    name: 'parent',
-    displayName: 'Parent',
-    storageType: DbHelper.storageEntity,
-  );
-  final durationCompKindId = await helper.createCompKind(
-    name: 'duration',
-    displayName: 'Duration',
-    storageType: DbHelper.storageReal,
-  );
-  final dateCompKindId = await helper.createCompKind(
-    name: 'date',
-    displayName: 'Date',
-    storageType: DbHelper.storageInteger,
-    semanticType: DbHelper.semanticDate,
-  );
-  final noteCompKindId = await helper.createCompKind(
-    name: 'note',
-    displayName: 'Note',
-    storageType: DbHelper.storageText,
-  );
+  await helper.ensureRequiredDefinitions();
+  final allCompKinds = await helper.getAllCompKinds();
+  final allEntityKinds = await helper.getAllEntityKinds();
 
-  final projectKindId = await helper.createEntityKind(
-    name: 'project',
-    displayName: 'Project',
-    compKindIds: [nameCompKindId],
-  );
-  final taskKindId = await helper.createEntityKind(
-    name: 'task',
-    displayName: 'Task',
-    compKindIds: [nameCompKindId, parentCompKindId],
-  );
-  final timeEntryKindId = await helper.createEntityKind(
-    name: 'time_entry',
-    displayName: 'Time Entry',
-    compKindIds: [
-      parentCompKindId,
-      durationCompKindId,
-      dateCompKindId,
-      noteCompKindId,
-    ],
-  );
+  final nameCompKindId = _compKindIdByName(allCompKinds, 'name');
+  final parentCompKindId = _compKindIdByName(allCompKinds, 'parent');
+  final projectKindId = _entityKindIdByName(allEntityKinds, 'project');
+  final taskKindId = _entityKindIdByName(allEntityKinds, 'task');
+  final timeEntryKindId = _entityKindIdByName(allEntityKinds, 'time_entry');
 
   return _ClockworkDayTestDefinitions(
     nameCompKindId: nameCompKindId,
@@ -495,4 +536,18 @@ class _ClockworkDayTestDefinitions {
   final int projectKindId;
   final int taskKindId;
   final int timeEntryKindId;
+}
+
+int _compKindIdByName(List<Map<String, dynamic>> componentKinds, String name) {
+  return componentKinds.singleWhere(
+        (componentKind) => componentKind['name'] == name,
+      )['id']
+      as int;
+}
+
+int _entityKindIdByName(List<Map<String, dynamic>> entityKinds, String name) {
+  return entityKinds.singleWhere(
+        (entityKind) => entityKind['name'] == name,
+      )['id']
+      as int;
 }

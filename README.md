@@ -59,6 +59,35 @@ A side menu with two menu options:
 
 More requirements will be defined once the basic operation is complete.
 
+# Local CLI
+
+Clockwork includes a local definitions CLI for updating the bundled required
+definitions manifest and optionally applying those definitions to a live
+database immediately.
+
+Examples:
+
+```bash
+dart run bin/clockwork_definitions.dart show
+
+dart run bin/clockwork_definitions.dart component-kind \
+  --name billable_code \
+  --display-name "Billable Code" \
+  --storage-type text
+
+dart run bin/clockwork_definitions.dart entity-kind \
+  --name project_note \
+  --display-name "Project Note" \
+  --component name \
+  --component note
+
+dart run bin/clockwork_definitions.dart apply-required \
+  --db C:\path\to\clockwork.db
+```
+
+Use `--apply-db` on the `component-kind` and `entity-kind` commands when you
+want the live database updated in the same step.
+
 # Design Principles
 
 This framework is a hobby project. 
