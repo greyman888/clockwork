@@ -7,6 +7,8 @@ import 'db_helper.dart';
 import 'required_definitions.dart';
 
 class ClockworkDefinitionsCli {
+  static bool _sqfliteFactoryInitialized = false;
+
   ClockworkDefinitionsCli({
     required this.defaultManifestPath,
     String? defaultDbPath,
@@ -304,13 +306,22 @@ class ClockworkDefinitionsCli {
     required String dbPath,
     required String manifestPath,
   }) {
-    sqfliteFfiInit();
-    databaseFactory = databaseFactoryFfi;
+    _ensureSqfliteFactory();
 
     return DbHelper.forFilePath(
       dbPath: dbPath,
       requiredDefinitionsLoader: () => File(manifestPath).readAsString(),
     );
+  }
+
+  static void _ensureSqfliteFactory() {
+    if (_sqfliteFactoryInitialized) {
+      return;
+    }
+
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+    _sqfliteFactoryInitialized = true;
   }
 
   void _writeUsage({StringSink? to}) {
@@ -341,14 +352,7 @@ class ClockworkDefinitionsCli {
   }
 
   static String _defaultLiveDbPath() {
-    final appData = Platform.environment['APPDATA'];
-    if (appData == null || appData.trim().isEmpty) {
-      return path.normalize(path.join(Directory.current.path, 'clockwork.db'));
-    }
-
-    return path.normalize(
-      path.join(appData, 'com.example', 'clockwork', 'clockwork.db'),
-    );
+    return path.normalize(DbHelper.defaultDatabasePath());
   }
 }
 

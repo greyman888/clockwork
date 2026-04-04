@@ -8,6 +8,8 @@ import 'app_db.dart';
 import 'day_page.dart';
 import 'definitions_page.dart';
 import 'entities_page.dart';
+import 'time_entry_formatting.dart';
+import 'week_page.dart';
 
 const _lightShellColor = Color(0xFFF3F3F3);
 const _darkShellColor = Color(0xFF202020);
@@ -61,6 +63,8 @@ class ClockworkShell extends StatefulWidget {
 
 class _ClockworkShellState extends State<ClockworkShell> {
   int _selectedIndex = 0;
+  DateTime _dayPageInitialDay = dateOnly(DateTime.now());
+  int _dayPageNavigationRevision = 0;
 
   void _changeSection(int index) {
     if (_selectedIndex == index) {
@@ -68,6 +72,15 @@ class _ClockworkShellState extends State<ClockworkShell> {
     }
 
     setState(() => _selectedIndex = index);
+  }
+
+  void _openDay([DateTime? day]) {
+    if (day != null) {
+      _dayPageInitialDay = dateOnly(day);
+      _dayPageNavigationRevision += 1;
+    }
+
+    _changeSection(1);
   }
 
   @override
@@ -105,15 +118,24 @@ class _ClockworkShellState extends State<ClockworkShell> {
               icon: const Icon(FluentIcons.home),
               title: const Text('Welcome'),
               body: ClockworkWelcomePage(
-                onOpenDay: () => _changeSection(1),
-                onOpenDefinitions: () => _changeSection(2),
-                onOpenEntities: () => _changeSection(3),
+                onOpenDay: _openDay,
+                onOpenWeek: () => _changeSection(2),
+                onOpenDefinitions: () => _changeSection(3),
+                onOpenEntities: () => _changeSection(4),
               ),
             ),
             PaneItem(
               icon: const Icon(FluentIcons.calendar_day),
               title: const Text('Day'),
-              body: const DayPage(),
+              body: DayPage(
+                key: ValueKey(_dayPageNavigationRevision),
+                initialDay: _dayPageInitialDay,
+              ),
+            ),
+            PaneItem(
+              icon: const Icon(FluentIcons.calendar_week),
+              title: const Text('Week'),
+              body: WeekPage(onOpenDay: _openDay),
             ),
             PaneItem(
               icon: const Icon(FluentIcons.database),
@@ -135,12 +157,14 @@ class _ClockworkShellState extends State<ClockworkShell> {
 class ClockworkWelcomePage extends StatelessWidget {
   const ClockworkWelcomePage({
     required this.onOpenDay,
+    required this.onOpenWeek,
     required this.onOpenDefinitions,
     required this.onOpenEntities,
     super.key,
   });
 
   final VoidCallback onOpenDay;
+  final VoidCallback onOpenWeek;
   final VoidCallback onOpenDefinitions;
   final VoidCallback onOpenEntities;
 
@@ -164,6 +188,7 @@ class ClockworkWelcomePage extends StatelessWidget {
               final isWide = constraints.maxWidth >= 900;
               final intro = _WelcomeIntro(
                 onOpenDay: onOpenDay,
+                onOpenWeek: onOpenWeek,
                 onOpenDefinitions: onOpenDefinitions,
                 onOpenEntities: onOpenEntities,
               );
@@ -249,6 +274,10 @@ class ClockworkWelcomePage extends StatelessWidget {
                 text:
                     'A dedicated Day page is now available for quick daily time-entry rows.',
               ),
+              const _ChecklistLine(
+                text:
+                    'A Week page can summarize Monday-to-Sunday project and task totals.',
+              ),
             ],
           ),
         ),
@@ -260,11 +289,13 @@ class ClockworkWelcomePage extends StatelessWidget {
 class _WelcomeIntro extends StatelessWidget {
   const _WelcomeIntro({
     required this.onOpenDay,
+    required this.onOpenWeek,
     required this.onOpenDefinitions,
     required this.onOpenEntities,
   });
 
   final VoidCallback onOpenDay;
+  final VoidCallback onOpenWeek;
   final VoidCallback onOpenDefinitions;
   final VoidCallback onOpenEntities;
 
@@ -293,6 +324,7 @@ class _WelcomeIntro extends StatelessWidget {
           runSpacing: 12,
           children: [
             FilledButton(onPressed: onOpenDay, child: const Text('Open Day')),
+            FilledButton(onPressed: onOpenWeek, child: const Text('Open Week')),
             FilledButton(
               onPressed: onOpenDefinitions,
               child: const Text('Open Definitions'),

@@ -11,9 +11,12 @@ void main() {
   late Directory tempDirectory;
   late DbHelper helper;
 
-  setUp(() async {
+  setUpAll(() {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
+  });
+
+  setUp(() async {
 
     tempDirectory = await Directory.systemTemp.createTemp('clockwork_test_');
     helper = DbHelper(
@@ -545,6 +548,382 @@ void main() {
     expect(entries, hasLength(1));
     expect(entries.single['billable_value'], 0);
   });
+
+  test('getWeekPageData loads the containing Monday to Sunday week', () async {
+    final definitions = await _loadRequiredDayDefinitions(helper);
+    final ids = await _createProjectAndTask(
+      helper,
+      definitions,
+      projectName: 'Project Atlas',
+      taskName: 'Client Workshop',
+    );
+
+    await helper.saveDayEntry(
+      date: DateTime(2026, 3, 30),
+      projectId: ids.projectId,
+      taskId: ids.taskId,
+      startMinutes: 9 * 60,
+      endMinutes: 10 * 60,
+    );
+    await helper.saveDayEntry(
+      date: DateTime(2026, 4, 1),
+      projectId: ids.projectId,
+      taskId: ids.taskId,
+      startMinutes: 9 * 60,
+      endMinutes: 11 * 60,
+    );
+    await helper.saveDayEntry(
+      date: DateTime(2026, 4, 5),
+      projectId: ids.projectId,
+      taskId: ids.taskId,
+      startMinutes: 13 * 60,
+      endMinutes: 16 * 60,
+    );
+    await helper.saveDayEntry(
+      date: DateTime(2026, 4, 6),
+      projectId: ids.projectId,
+      taskId: ids.taskId,
+      startMinutes: 8 * 60,
+      endMinutes: 9 * 60,
+    );
+
+    final weekData = await helper.getWeekPageData(DateTime(2026, 4, 1));
+    final rows = List<Map<String, dynamic>>.from(
+      weekData['rows'] as List<dynamic>? ?? const [],
+    );
+
+    expect(
+      weekData['week_start'],
+      DateTime(2026, 3, 30).millisecondsSinceEpoch,
+    );
+    expect(weekData['week_end'], DateTime(2026, 4, 5).millisecondsSinceEpoch);
+    expect(weekData['week_total_minutes'], 360);
+    expect(rows, hasLength(1));
+    expect(rows.single['day_minutes'], equals([60, 0, 120, 0, 0, 0, 180]));
+    expect(rows.single['total_minutes'], 360);
+  });
+
+  test(
+    'getWeekPageData groups repeated project task billable entries',
+    () async {
+      final definitions = await _loadRequiredDayDefinitions(helper);
+      final ids = await _createProjectAndTask(
+        helper,
+        definitions,
+        projectName: 'Project Atlas',
+        taskName: 'Design Review',
+      );
+
+      await helper.saveDayEntry(
+        date: DateTime(2026, 4, 7),
+        projectId: ids.projectId,
+        taskId: ids.taskId,
+        startMinutes: 9 * 60,
+        endMinutes: 9 * 60 + 30,
+      );
+      await helper.saveDayEntry(
+        date: DateTime(2026, 4, 7),
+        projectId: ids.projectId,
+        taskId: ids.taskId,
+        startMinutes: 10 * 60,
+        endMinutes: 11 * 60,
+      );
+      await helper.saveDayEntry(
+        date: DateTime(2026, 4, 9),
+        projectId: ids.projectId,
+        taskId: ids.taskId,
+        startMinutes: 14 * 60,
+        endMinutes: 15 * 60 + 15,
+      );
+
+      final weekData = await helper.getWeekPageData(DateTime(2026, 4, 9));
+      final rows = List<Map<String, dynamic>>.from(
+        weekData['rows'] as List<dynamic>? ?? const [],
+      );
+
+      expect(rows, hasLength(1));
+      expect(rows.single['day_minutes'], equals([0, 90, 0, 75, 0, 0, 0]));
+      expect(rows.single['total_minutes'], 165);
+      expect(weekData['week_total_minutes'], 165);
+    },
+  );
+
+  test(
+    'getWeekPageData builds unique day note lines in start time order',
+    () async {
+      final definitions = await _loadRequiredDayDefinitions(helper);
+      final ids = await _createProjectAndTask(
+        helper,
+        definitions,
+        projectName: 'Project Atlas',
+        taskName: 'Notes Review',
+      );
+
+      await helper.saveDayEntry(
+        date: DateTime(2026, 4, 7),
+        projectId: ids.projectId,
+        taskId: ids.taskId,
+        startMinutes: 10 * 60,
+        endMinutes: 10 * 60 + 30,
+        note: 'Second note',
+      );
+      await helper.saveDayEntry(
+        date: DateTime(2026, 4, 7),
+        projectId: ids.projectId,
+        taskId: ids.taskId,
+        startMinutes: 9 * 60,
+        endMinutes: 9 * 60 + 15,
+        note: 'First note',
+      );
+      await helper.saveDayEntry(
+        date: DateTime(2026, 4, 7),
+        projectId: ids.projectId,
+        taskId: ids.taskId,
+        startMinutes: 11 * 60,
+        endMinutes: 11 * 60 + 20,
+        note: 'First note',
+      );
+      await helper.saveDayEntry(
+        date: DateTime(2026, 4, 7),
+        projectId: ids.projectId,
+        taskId: ids.taskId,
+        startMinutes: 12 * 60,
+        endMinutes: 12 * 60 + 10,
+        note: '   ',
+      );
+      await helper.saveDayEntry(
+        date: DateTime(2026, 4, 9),
+        projectId: ids.projectId,
+        taskId: ids.taskId,
+        startMinutes: 8 * 60,
+        endMinutes: 8 * 60 + 20,
+        note: 'First note',
+      );
+
+      final weekData = await helper.getWeekPageData(DateTime(2026, 4, 9));
+      final rows = List<Map<String, dynamic>>.from(
+        weekData['rows'] as List<dynamic>? ?? const [],
+      );
+
+      expect(rows, hasLength(1));
+      expect(rows.single['day_minutes'], equals([0, 75, 0, 20, 0, 0, 0]));
+      expect(
+        rows.single['day_note_lines'],
+        equals([
+          <String>[],
+          ['First note', 'Second note'],
+          <String>[],
+          ['First note'],
+          <String>[],
+          <String>[],
+          <String>[],
+        ]),
+      );
+      expect(rows.single['total_minutes'], 95);
+    },
+  );
+
+  test('getWeekPageData splits billable and non-billable rows', () async {
+    final definitions = await _loadRequiredDayDefinitions(helper);
+    final ids = await _createProjectAndTask(
+      helper,
+      definitions,
+      projectName: 'Project Atlas',
+      taskName: 'Reporting',
+    );
+
+    await helper.saveDayEntry(
+      date: DateTime(2026, 4, 6),
+      projectId: ids.projectId,
+      taskId: ids.taskId,
+      startMinutes: 9 * 60,
+      endMinutes: 10 * 60,
+      billableValue: 1,
+      note: 'Client delivery',
+    );
+    await helper.saveDayEntry(
+      date: DateTime(2026, 4, 8),
+      projectId: ids.projectId,
+      taskId: ids.taskId,
+      startMinutes: 13 * 60,
+      endMinutes: 14 * 60 + 30,
+      billableValue: 0,
+      note: 'Internal admin',
+    );
+
+    final weekData = await helper.getWeekPageData(DateTime(2026, 4, 8));
+    final rows = List<Map<String, dynamic>>.from(
+      weekData['rows'] as List<dynamic>? ?? const [],
+    );
+
+    expect(rows, hasLength(2));
+
+    final billableRow = _weekRowFor(
+      rows,
+      projectName: 'Project Atlas',
+      taskName: 'Reporting',
+      billableValue: 1,
+    );
+    final nonBillableRow = _weekRowFor(
+      rows,
+      projectName: 'Project Atlas',
+      taskName: 'Reporting',
+      billableValue: 0,
+    );
+
+    expect(billableRow['day_minutes'], equals([60, 0, 0, 0, 0, 0, 0]));
+    expect(
+      billableRow['day_note_lines'],
+      equals([
+        ['Client delivery'],
+        <String>[],
+        <String>[],
+        <String>[],
+        <String>[],
+        <String>[],
+        <String>[],
+      ]),
+    );
+    expect(billableRow['total_minutes'], 60);
+    expect(nonBillableRow['day_minutes'], equals([0, 0, 90, 0, 0, 0, 0]));
+    expect(
+      nonBillableRow['day_note_lines'],
+      equals([
+        <String>[],
+        <String>[],
+        ['Internal admin'],
+        <String>[],
+        <String>[],
+        <String>[],
+        <String>[],
+      ]),
+    );
+    expect(nonBillableRow['total_minutes'], 90);
+    expect(weekData['week_total_minutes'], 150);
+  });
+
+  test('getWeekPageData sorts rows by total then name then billable', () async {
+    final definitions = await _loadRequiredDayDefinitions(helper);
+    final atlasIds = await _createProjectAndTask(
+      helper,
+      definitions,
+      projectName: 'Project Atlas',
+      taskName: 'Analysis',
+    );
+    final bravoIds = await _createProjectAndTask(
+      helper,
+      definitions,
+      projectName: 'Project Bravo',
+      taskName: 'Design',
+    );
+    final zephyrIds = await _createProjectAndTask(
+      helper,
+      definitions,
+      projectName: 'Project Zephyr',
+      taskName: 'Support',
+    );
+
+    await helper.saveDayEntry(
+      date: DateTime(2026, 4, 6),
+      projectId: atlasIds.projectId,
+      taskId: atlasIds.taskId,
+      startMinutes: 9 * 60,
+      endMinutes: 12 * 60,
+      billableValue: 1,
+    );
+    await helper.saveDayEntry(
+      date: DateTime(2026, 4, 7),
+      projectId: atlasIds.projectId,
+      taskId: atlasIds.taskId,
+      startMinutes: 9 * 60,
+      endMinutes: 12 * 60,
+      billableValue: 0,
+    );
+    await helper.saveDayEntry(
+      date: DateTime(2026, 4, 8),
+      projectId: bravoIds.projectId,
+      taskId: bravoIds.taskId,
+      startMinutes: 9 * 60,
+      endMinutes: 12 * 60,
+      billableValue: 1,
+    );
+    await helper.saveDayEntry(
+      date: DateTime(2026, 4, 9),
+      projectId: zephyrIds.projectId,
+      taskId: zephyrIds.taskId,
+      startMinutes: 9 * 60,
+      endMinutes: 11 * 60,
+      billableValue: 1,
+    );
+
+    final weekData = await helper.getWeekPageData(DateTime(2026, 4, 9));
+    final rows = List<Map<String, dynamic>>.from(
+      weekData['rows'] as List<dynamic>? ?? const [],
+    );
+
+    expect(rows, hasLength(4));
+    expect(rows[0]['project_name'], 'Project Atlas');
+    expect(rows[0]['task_name'], 'Analysis');
+    expect(rows[0]['billable_value'], 1);
+    expect(rows[1]['project_name'], 'Project Atlas');
+    expect(rows[1]['task_name'], 'Analysis');
+    expect(rows[1]['billable_value'], 0);
+    expect(rows[2]['project_name'], 'Project Bravo');
+    expect(rows[2]['task_name'], 'Design');
+    expect(rows[3]['project_name'], 'Project Zephyr');
+    expect(rows[3]['task_name'], 'Support');
+  });
+
+  test(
+    'getWeekPageData falls back to start and end times for legacy rows',
+    () async {
+      final definitions = await _loadRequiredDayDefinitions(helper);
+      final ids = await _createProjectAndTask(
+        helper,
+        definitions,
+        projectName: 'Project Atlas',
+        taskName: 'Legacy Support',
+      );
+
+      await helper.createEntity(
+        kindId: definitions.timeEntryKindId,
+        componentValues: {
+          definitions.parentCompKindId: ids.taskId,
+          definitions.dateCompKindId: DateTime(
+            2026,
+            4,
+            1,
+          ).millisecondsSinceEpoch,
+          definitions.startTimeCompKindId: 9 * 60,
+          definitions.endTimeCompKindId: 10 * 60 + 45,
+          definitions.noteCompKindId: 'Legacy entry',
+        },
+      );
+
+      final weekData = await helper.getWeekPageData(DateTime(2026, 4, 1));
+      final rows = List<Map<String, dynamic>>.from(
+        weekData['rows'] as List<dynamic>? ?? const [],
+      );
+
+      expect(rows, hasLength(1));
+      expect(rows.single['billable_value'], 0);
+      expect(rows.single['day_minutes'], equals([0, 0, 105, 0, 0, 0, 0]));
+      expect(
+        rows.single['day_note_lines'],
+        equals([
+          <String>[],
+          <String>[],
+          ['Legacy entry'],
+          <String>[],
+          <String>[],
+          <String>[],
+          <String>[],
+        ]),
+      );
+      expect(rows.single['total_minutes'], 105);
+      expect(weekData['week_total_minutes'], 105);
+    },
+  );
 }
 
 Object? _valueForComponent(Map<String, dynamic> entity, String componentName) {
@@ -653,4 +1032,46 @@ int _entityKindIdByName(List<Map<String, dynamic>> entityKinds, String name) {
         (entityKind) => entityKind['name'] == name,
       )['id']
       as int;
+}
+
+Future<_ProjectTaskIds> _createProjectAndTask(
+  DbHelper helper,
+  _ClockworkDayTestDefinitions definitions, {
+  required String projectName,
+  required String taskName,
+}) async {
+  final projectId = await helper.createEntity(
+    kindId: definitions.projectKindId,
+    componentValues: {definitions.nameCompKindId: projectName},
+  );
+  final taskId = await helper.createEntity(
+    kindId: definitions.taskKindId,
+    componentValues: {
+      definitions.nameCompKindId: taskName,
+      definitions.parentCompKindId: projectId,
+    },
+  );
+
+  return _ProjectTaskIds(projectId: projectId, taskId: taskId);
+}
+
+Map<String, dynamic> _weekRowFor(
+  List<Map<String, dynamic>> rows, {
+  required String projectName,
+  required String taskName,
+  required int billableValue,
+}) {
+  return rows.singleWhere(
+    (row) =>
+        row['project_name'] == projectName &&
+        row['task_name'] == taskName &&
+        row['billable_value'] == billableValue,
+  );
+}
+
+class _ProjectTaskIds {
+  const _ProjectTaskIds({required this.projectId, required this.taskId});
+
+  final int projectId;
+  final int taskId;
 }

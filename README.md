@@ -117,3 +117,7 @@ Aim for code comprehension.
 Create a limited set of tests that are focused on CRUD operations of data to assure data integrity.
 
 No UI tests are required.
+
+# Windows release
+
+For the internal Windows installer workflow, packaging script, smoke-test checklist, and end-user install notes, see [docs/WINDOWS_RELEASE.md](docs/WINDOWS_RELEASE.md).

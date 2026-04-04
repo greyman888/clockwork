@@ -35,6 +35,9 @@ class DbHelper {
 
   static const int activeStatus = 1;
   static const int deletedStatus = 0;
+  static const String productName = 'Clockwork';
+  static const String publisherName = 'Clockwork Software';
+  static const String applicationId = 'software.clockwork.clockwork';
 
   static const String storageInteger = 'integer';
   static const String storageReal = 'real';
@@ -76,7 +79,7 @@ class DbHelper {
       return databaseDirectory!;
     }
 
-    final supportDirPath = _defaultDatabaseDirectoryPath();
+    final supportDirPath = defaultDatabaseDirectoryPath();
     await Directory(supportDirPath).create(recursive: true);
     return supportDirPath;
   }
@@ -1007,185 +1010,107 @@ class DbHelper {
   }
 
   Future<Map<String, dynamic>> getDayPageData(DateTime date) async {
-    await ensureRequiredDefinitions();
-
     final day = _normalizeDayDate(date);
-    final definitions = await _getClockworkDayDefinitions();
-    final results = await Future.wait([
-      getEntitiesWithComponents(kindId: definitions.projectKindId),
-      getEntitiesWithComponents(kindId: definitions.taskKindId),
-      getEntitiesWithComponents(kindId: definitions.timeEntryKindId),
-    ]);
-
-    final rawProjects = results[0];
-    final rawTasks = results[1];
-    final rawTimeEntries = results[2];
-
-    final projects =
-        rawProjects.map((entity) {
-          final projectId = entity['id'] as int;
-          final name =
-              (_componentValueForKindId(entity, definitions.nameCompKindId)
-                      as String?)
-                  ?.trim();
-
-          return <String, dynamic>{
-            'id': projectId,
-            'name': (name == null || name.isEmpty)
-                ? 'Project #$projectId'
-                : name,
-          };
-        }).toList()..sort((left, right) {
-          final nameCompare = (left['name'] as String).toLowerCase().compareTo(
-            (right['name'] as String).toLowerCase(),
-          );
-          if (nameCompare != 0) {
-            return nameCompare;
-          }
-          return (left['id'] as int).compareTo(right['id'] as int);
-        });
-
-    final projectNamesById = <int, String>{
-      for (final project in projects)
-        project['id'] as int: project['name'] as String,
-    };
-
-    final tasks =
-        rawTasks.map((entity) {
-          final taskId = entity['id'] as int;
-          final name =
-              (_componentValueForKindId(entity, definitions.nameCompKindId)
-                      as String?)
-                  ?.trim();
-          final projectId =
-              _componentValueForKindId(entity, definitions.parentCompKindId)
-                  as int?;
-
-          return <String, dynamic>{
-            'id': taskId,
-            'name': (name == null || name.isEmpty) ? 'Task #$taskId' : name,
-            'project_id': projectId,
-            'project_name': projectId == null
-                ? null
-                : projectNamesById[projectId],
-          };
-        }).toList()..sort((left, right) {
-          final projectCompare = ((left['project_name'] as String?) ?? '')
-              .toLowerCase()
-              .compareTo(
-                ((right['project_name'] as String?) ?? '').toLowerCase(),
-              );
-          if (projectCompare != 0) {
-            return projectCompare;
-          }
-
-          final nameCompare = (left['name'] as String).toLowerCase().compareTo(
-            (right['name'] as String).toLowerCase(),
-          );
-          if (nameCompare != 0) {
-            return nameCompare;
-          }
-
-          return (left['id'] as int).compareTo(right['id'] as int);
-        });
-
-    final tasksById = <int, Map<String, dynamic>>{
-      for (final task in tasks) task['id'] as int: task,
-    };
+    final sourceData = await _loadClockworkTimeEntrySourceData();
 
     final entries =
-        rawTimeEntries
-            .where(
-              (entity) =>
-                  _componentValueForKindId(
-                    entity,
-                    definitions.dateCompKindId,
-                  ) ==
-                  day.millisecondsSinceEpoch,
+        sourceData.entries
+            .where((entry) => entry['date'] == day.millisecondsSinceEpoch)
+            .map(
+              (entry) => <String, dynamic>{
+                'id': entry['id'],
+                'project_id': entry['project_id'],
+                'project_name': entry['project_name'],
+                'task_id': entry['task_id'],
+                'task_name': entry['task_name'],
+                'start_minutes': entry['start_minutes'],
+                'end_minutes': entry['end_minutes'],
+                'duration_hours': entry['duration_hours'],
+                'billable_value': entry['billable_value'],
+                'note': entry['note'],
+              },
             )
-            .map((entity) {
-              final entryId = entity['id'] as int;
-              final taskId =
-                  _componentValueForKindId(entity, definitions.parentCompKindId)
-                      as int?;
-              final task = taskId == null ? null : tasksById[taskId];
-              final startMinutes =
-                  _componentValueForKindId(
-                        entity,
-                        definitions.startTimeCompKindId,
-                      )
-                      as int?;
-              final endMinutes =
-                  _componentValueForKindId(
-                        entity,
-                        definitions.endTimeCompKindId,
-                      )
-                      as int?;
-              final duration =
-                  _componentValueForKindId(
-                        entity,
-                        definitions.durationCompKindId,
-                      )
-                      as num?;
-              final note =
-                  _componentValueForKindId(entity, definitions.noteCompKindId)
-                      as String?;
-              final billableValue =
-                  _componentValueForKindId(
-                        entity,
-                        definitions.billableCompKindId,
-                      )
-                      as int?;
-
-              return <String, dynamic>{
-                'id': entryId,
-                'project_id': task?['project_id'],
-                'project_name': task?['project_name'],
-                'task_id': taskId,
-                'task_name':
-                    task?['name'] ?? (taskId == null ? null : 'Task #$taskId'),
-                'start_minutes': startMinutes,
-                'end_minutes': endMinutes,
-                'duration_hours': duration?.toDouble(),
-                'billable_value': billableValue ?? 0,
-                'note': note ?? '',
-              };
-            })
             .toList()
-          ..sort((left, right) {
-            final leftStart = left['start_minutes'] as int?;
-            final rightStart = right['start_minutes'] as int?;
-
-            if (leftStart == null && rightStart != null) {
-              return 1;
-            }
-            if (leftStart != null && rightStart == null) {
-              return -1;
-            }
-            if (leftStart != null && rightStart != null) {
-              final compare = leftStart.compareTo(rightStart);
-              if (compare != 0) {
-                return compare;
-              }
-            }
-
-            final taskCompare = ((left['task_name'] as String?) ?? '')
-                .toLowerCase()
-                .compareTo(
-                  ((right['task_name'] as String?) ?? '').toLowerCase(),
-                );
-            if (taskCompare != 0) {
-              return taskCompare;
-            }
-
-            return (left['id'] as int).compareTo(right['id'] as int);
-          });
+          ..sort(_compareDayEntries);
 
     return {
       'date': day.millisecondsSinceEpoch,
-      'projects': projects,
-      'tasks': tasks,
+      'projects': sourceData.projects,
+      'tasks': sourceData.tasks,
       'entries': entries,
+    };
+  }
+
+  Future<Map<String, dynamic>> getWeekPageData(DateTime date) async {
+    final anchorDay = _normalizeDayDate(date);
+    final weekStart = _weekStartForDate(anchorDay);
+    final weekEnd = weekStart.add(const Duration(days: 6));
+    final weekStartValue = weekStart.millisecondsSinceEpoch;
+    final weekEndValue = weekEnd.millisecondsSinceEpoch;
+    final sourceData = await _loadClockworkTimeEntrySourceData();
+    final sortedEntries = List<Map<String, dynamic>>.from(sourceData.entries)
+      ..sort(_compareWeekEntriesForAggregation);
+    final rowsByKey = <_ClockworkWeekRowKey, _ClockworkWeekRowAccumulator>{};
+
+    for (final entry in sortedEntries) {
+      final entryDateValue = entry['date'] as int?;
+      final durationMinutes = entry['duration_minutes'] as int?;
+      final projectId = entry['project_id'] as int?;
+      final taskId = entry['task_id'] as int?;
+
+      if (entryDateValue == null ||
+          durationMinutes == null ||
+          durationMinutes <= 0 ||
+          projectId == null ||
+          taskId == null) {
+        continue;
+      }
+
+      if (entryDateValue < weekStartValue || entryDateValue > weekEndValue) {
+        continue;
+      }
+
+      final entryDay = DateTime.fromMillisecondsSinceEpoch(entryDateValue);
+      final dayIndex = entryDay.weekday - DateTime.monday;
+      if (dayIndex < 0 || dayIndex >= 7) {
+        continue;
+      }
+
+      final billableValue = entry['billable_value'] as int? ?? 0;
+      final rowKey = _ClockworkWeekRowKey(
+        projectId: projectId,
+        taskId: taskId,
+        billableValue: billableValue,
+      );
+      final row = rowsByKey.putIfAbsent(
+        rowKey,
+        () => _ClockworkWeekRowAccumulator(
+          projectId: projectId,
+          projectName:
+              entry['project_name'] as String? ?? 'Project #$projectId',
+          taskId: taskId,
+          taskName: entry['task_name'] as String? ?? 'Task #$taskId',
+          billableValue: billableValue,
+        ),
+      );
+
+      row.addMinutes(dayIndex, durationMinutes);
+      row.addNoteLine(dayIndex, entry['note'] as String?);
+    }
+
+    final rows = rowsByKey.values.map((row) => row.toMap()).toList()
+      ..sort(_compareWeekRows);
+    final weekTotalMinutes = rows.fold<int>(
+      0,
+      (total, row) => total + (row['total_minutes'] as int? ?? 0),
+    );
+
+    return {
+      'week_start': weekStartValue,
+      'week_end': weekEndValue,
+      'week_total_minutes': weekTotalMinutes,
+      'projects': sourceData.projects,
+      'rows': rows,
     };
   }
 
@@ -1371,6 +1296,279 @@ class DbHelper {
     final manifest = await _getRequiredDefinitionsManifest();
     final database = await db;
     return _loadClockworkDayDefinitions(database, manifest);
+  }
+
+  Future<_ClockworkTimeEntrySourceData>
+  _loadClockworkTimeEntrySourceData() async {
+    await ensureRequiredDefinitions();
+
+    final definitions = await _getClockworkDayDefinitions();
+    final results = await Future.wait<List<Map<String, dynamic>>>([
+      getEntitiesWithComponents(kindId: definitions.projectKindId),
+      getEntitiesWithComponents(kindId: definitions.taskKindId),
+      getEntitiesWithComponents(kindId: definitions.timeEntryKindId),
+    ]);
+
+    final rawProjects = results[0];
+    final rawTasks = results[1];
+    final rawTimeEntries = results[2];
+
+    final projects =
+        rawProjects.map((entity) {
+          final projectId = entity['id'] as int;
+          final name =
+              (_componentValueForKindId(entity, definitions.nameCompKindId)
+                      as String?)
+                  ?.trim();
+
+          return <String, dynamic>{
+            'id': projectId,
+            'name': (name == null || name.isEmpty)
+                ? 'Project #$projectId'
+                : name,
+          };
+        }).toList()..sort((left, right) {
+          final nameCompare = (left['name'] as String).toLowerCase().compareTo(
+            (right['name'] as String).toLowerCase(),
+          );
+          if (nameCompare != 0) {
+            return nameCompare;
+          }
+          return (left['id'] as int).compareTo(right['id'] as int);
+        });
+
+    final projectNamesById = <int, String>{
+      for (final project in projects)
+        project['id'] as int: project['name'] as String,
+    };
+
+    final tasks =
+        rawTasks.map((entity) {
+          final taskId = entity['id'] as int;
+          final name =
+              (_componentValueForKindId(entity, definitions.nameCompKindId)
+                      as String?)
+                  ?.trim();
+          final projectId =
+              _componentValueForKindId(entity, definitions.parentCompKindId)
+                  as int?;
+
+          return <String, dynamic>{
+            'id': taskId,
+            'name': (name == null || name.isEmpty) ? 'Task #$taskId' : name,
+            'project_id': projectId,
+            'project_name': projectId == null
+                ? null
+                : projectNamesById[projectId] ?? 'Project #$projectId',
+          };
+        }).toList()..sort((left, right) {
+          final projectCompare = ((left['project_name'] as String?) ?? '')
+              .toLowerCase()
+              .compareTo(
+                ((right['project_name'] as String?) ?? '').toLowerCase(),
+              );
+          if (projectCompare != 0) {
+            return projectCompare;
+          }
+
+          final nameCompare = (left['name'] as String).toLowerCase().compareTo(
+            (right['name'] as String).toLowerCase(),
+          );
+          if (nameCompare != 0) {
+            return nameCompare;
+          }
+
+          return (left['id'] as int).compareTo(right['id'] as int);
+        });
+
+    final tasksById = <int, Map<String, dynamic>>{
+      for (final task in tasks) task['id'] as int: task,
+    };
+
+    final entries = rawTimeEntries.map((entity) {
+      final entryId = entity['id'] as int;
+      final taskId =
+          _componentValueForKindId(entity, definitions.parentCompKindId)
+              as int?;
+      final task = taskId == null ? null : tasksById[taskId];
+      final startMinutes =
+          _componentValueForKindId(entity, definitions.startTimeCompKindId)
+              as int?;
+      final endMinutes =
+          _componentValueForKindId(entity, definitions.endTimeCompKindId)
+              as int?;
+      final durationHours =
+          _componentValueForKindId(entity, definitions.durationCompKindId)
+              as num?;
+      final note =
+          _componentValueForKindId(entity, definitions.noteCompKindId)
+              as String?;
+      final billableValue =
+          _componentValueForKindId(entity, definitions.billableCompKindId)
+              as int?;
+      final dateValue =
+          _componentValueForKindId(entity, definitions.dateCompKindId) as int?;
+
+      return <String, dynamic>{
+        'id': entryId,
+        'date': dateValue,
+        'project_id': task?['project_id'],
+        'project_name': task?['project_name'],
+        'task_id': taskId,
+        'task_name': task?['name'] ?? (taskId == null ? null : 'Task #$taskId'),
+        'start_minutes': startMinutes,
+        'end_minutes': endMinutes,
+        'duration_hours': durationHours?.toDouble(),
+        'duration_minutes': _resolveDayEntryDurationMinutes(
+          durationHours: durationHours,
+          startMinutes: startMinutes,
+          endMinutes: endMinutes,
+        ),
+        'billable_value': billableValue ?? 0,
+        'note': note ?? '',
+      };
+    }).toList();
+
+    return _ClockworkTimeEntrySourceData(
+      projects: projects,
+      tasks: tasks,
+      entries: entries,
+    );
+  }
+
+  int _compareDayEntries(
+    Map<String, dynamic> left,
+    Map<String, dynamic> right,
+  ) {
+    final leftStart = left['start_minutes'] as int?;
+    final rightStart = right['start_minutes'] as int?;
+
+    if (leftStart == null && rightStart != null) {
+      return 1;
+    }
+    if (leftStart != null && rightStart == null) {
+      return -1;
+    }
+    if (leftStart != null && rightStart != null) {
+      final compare = leftStart.compareTo(rightStart);
+      if (compare != 0) {
+        return compare;
+      }
+    }
+
+    final taskCompare = ((left['task_name'] as String?) ?? '')
+        .toLowerCase()
+        .compareTo(((right['task_name'] as String?) ?? '').toLowerCase());
+    if (taskCompare != 0) {
+      return taskCompare;
+    }
+
+    return (left['id'] as int).compareTo(right['id'] as int);
+  }
+
+  int _compareWeekRows(Map<String, dynamic> left, Map<String, dynamic> right) {
+    final totalCompare = (right['total_minutes'] as int).compareTo(
+      left['total_minutes'] as int,
+    );
+    if (totalCompare != 0) {
+      return totalCompare;
+    }
+
+    final projectCompare = (left['project_name'] as String)
+        .toLowerCase()
+        .compareTo((right['project_name'] as String).toLowerCase());
+    if (projectCompare != 0) {
+      return projectCompare;
+    }
+
+    final taskCompare = (left['task_name'] as String).toLowerCase().compareTo(
+      (right['task_name'] as String).toLowerCase(),
+    );
+    if (taskCompare != 0) {
+      return taskCompare;
+    }
+
+    final billableCompare = (right['billable_value'] as int).compareTo(
+      left['billable_value'] as int,
+    );
+    if (billableCompare != 0) {
+      return billableCompare;
+    }
+
+    final projectIdCompare = (left['project_id'] as int).compareTo(
+      right['project_id'] as int,
+    );
+    if (projectIdCompare != 0) {
+      return projectIdCompare;
+    }
+
+    final taskIdCompare = (left['task_id'] as int).compareTo(
+      right['task_id'] as int,
+    );
+    if (taskIdCompare != 0) {
+      return taskIdCompare;
+    }
+
+    return 0;
+  }
+
+  int _compareWeekEntriesForAggregation(
+    Map<String, dynamic> left,
+    Map<String, dynamic> right,
+  ) {
+    final leftDate = left['date'] as int?;
+    final rightDate = right['date'] as int?;
+
+    if (leftDate == null && rightDate != null) {
+      return 1;
+    }
+    if (leftDate != null && rightDate == null) {
+      return -1;
+    }
+    if (leftDate != null && rightDate != null) {
+      final dateCompare = leftDate.compareTo(rightDate);
+      if (dateCompare != 0) {
+        return dateCompare;
+      }
+    }
+
+    final leftStart = left['start_minutes'] as int?;
+    final rightStart = right['start_minutes'] as int?;
+
+    if (leftStart == null && rightStart != null) {
+      return 1;
+    }
+    if (leftStart != null && rightStart == null) {
+      return -1;
+    }
+    if (leftStart != null && rightStart != null) {
+      final startCompare = leftStart.compareTo(rightStart);
+      if (startCompare != 0) {
+        return startCompare;
+      }
+    }
+
+    final leftId = left['id'] as int? ?? 0;
+    final rightId = right['id'] as int? ?? 0;
+    return leftId.compareTo(rightId);
+  }
+
+  int? _resolveDayEntryDurationMinutes({
+    required num? durationHours,
+    required int? startMinutes,
+    required int? endMinutes,
+  }) {
+    if (durationHours != null && durationHours > 0) {
+      return (durationHours * 60).round();
+    }
+
+    if (startMinutes != null &&
+        endMinutes != null &&
+        endMinutes > startMinutes) {
+      return endMinutes - startMinutes;
+    }
+
+    return null;
   }
 
   Future<RequiredDefinitionsManifest> _getRequiredDefinitionsManifest() async {
@@ -1803,6 +2001,11 @@ class DbHelper {
 
   DateTime _normalizeDayDate(DateTime value) {
     return DateTime(value.year, value.month, value.day);
+  }
+
+  DateTime _weekStartForDate(DateTime value) {
+    final day = _normalizeDayDate(value);
+    return day.subtract(Duration(days: day.weekday - DateTime.monday));
   }
 
   int _normalizeDayMinutes(
@@ -2552,11 +2755,11 @@ class DbHelper {
     _db = null;
   }
 
-  String _defaultDatabaseDirectoryPath() {
+  static String defaultDatabaseDirectoryPath() {
     if (Platform.isWindows) {
       final appData = Platform.environment['APPDATA'];
       if (appData != null && appData.trim().isNotEmpty) {
-        return path.join(appData, 'com.example', 'clockwork');
+        return path.join(appData, publisherName, productName);
       }
     }
 
@@ -2567,20 +2770,24 @@ class DbHelper {
         homePath,
         'Library',
         'Application Support',
-        'com.example.clockwork',
+        applicationId,
       );
     }
 
     if (Platform.isLinux && homePath != null && homePath.trim().isNotEmpty) {
       final xdgDataHome = Platform.environment['XDG_DATA_HOME'];
       if (xdgDataHome != null && xdgDataHome.trim().isNotEmpty) {
-        return path.join(xdgDataHome, 'com.example.clockwork');
+        return path.join(xdgDataHome, applicationId);
       }
 
-      return path.join(homePath, '.local', 'share', 'com.example.clockwork');
+      return path.join(homePath, '.local', 'share', applicationId);
     }
 
     return path.join(Directory.current.path, '.clockwork');
+  }
+
+  static String defaultDatabasePath({String dbName = 'clockwork.db'}) {
+    return path.join(defaultDatabaseDirectoryPath(), dbName);
   }
 }
 
@@ -2610,4 +2817,97 @@ class _ClockworkDayDefinitions {
   final int billableCompKindId;
   final int startTimeCompKindId;
   final int endTimeCompKindId;
+}
+
+class _ClockworkTimeEntrySourceData {
+  _ClockworkTimeEntrySourceData({
+    required List<Map<String, dynamic>> projects,
+    required List<Map<String, dynamic>> tasks,
+    required List<Map<String, dynamic>> entries,
+  }) : projects = List<Map<String, dynamic>>.unmodifiable(projects),
+       tasks = List<Map<String, dynamic>>.unmodifiable(tasks),
+       entries = List<Map<String, dynamic>>.unmodifiable(entries);
+
+  final List<Map<String, dynamic>> projects;
+  final List<Map<String, dynamic>> tasks;
+  final List<Map<String, dynamic>> entries;
+}
+
+class _ClockworkWeekRowKey {
+  const _ClockworkWeekRowKey({
+    required this.projectId,
+    required this.taskId,
+    required this.billableValue,
+  });
+
+  final int projectId;
+  final int taskId;
+  final int billableValue;
+
+  @override
+  bool operator ==(Object other) {
+    return other is _ClockworkWeekRowKey &&
+        other.projectId == projectId &&
+        other.taskId == taskId &&
+        other.billableValue == billableValue;
+  }
+
+  @override
+  int get hashCode => Object.hash(projectId, taskId, billableValue);
+}
+
+class _ClockworkWeekRowAccumulator {
+  _ClockworkWeekRowAccumulator({
+    required this.projectId,
+    required this.projectName,
+    required this.taskId,
+    required this.taskName,
+    required this.billableValue,
+  });
+
+  final int projectId;
+  final String projectName;
+  final int taskId;
+  final String taskName;
+  final int billableValue;
+  final List<int> _dayMinutes = List<int>.filled(7, 0);
+  final List<List<String>> _dayNoteLines = List.generate(7, (_) => <String>[]);
+  final List<Set<String>> _seenDayNotes = List.generate(7, (_) => <String>{});
+
+  void addMinutes(int dayIndex, int durationMinutes) {
+    _dayMinutes[dayIndex] += durationMinutes;
+  }
+
+  void addNoteLine(int dayIndex, String? note) {
+    final normalizedNote = note?.trim();
+    if (normalizedNote == null || normalizedNote.isEmpty) {
+      return;
+    }
+
+    if (_seenDayNotes[dayIndex].add(normalizedNote)) {
+      _dayNoteLines[dayIndex].add(normalizedNote);
+    }
+  }
+
+  Map<String, dynamic> toMap() {
+    final dayMinutes = List<int>.unmodifiable(_dayMinutes);
+    final dayNoteLines = List<List<String>>.unmodifiable(
+      _dayNoteLines.map(List<String>.unmodifiable),
+    );
+    final totalMinutes = dayMinutes.fold<int>(
+      0,
+      (total, value) => total + value,
+    );
+
+    return {
+      'project_id': projectId,
+      'project_name': projectName,
+      'task_id': taskId,
+      'task_name': taskName,
+      'billable_value': billableValue,
+      'day_minutes': dayMinutes,
+      'day_note_lines': dayNoteLines,
+      'total_minutes': totalMinutes,
+    };
+  }
 }

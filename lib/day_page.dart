@@ -4,9 +4,12 @@ import 'package:fluent_ui/fluent_ui.dart';
 import 'app_db.dart';
 import 'day_entry_validation.dart';
 import 'editor_helpers.dart';
+import 'time_entry_formatting.dart';
 
 class DayPage extends StatefulWidget {
-  const DayPage({super.key});
+  const DayPage({required this.initialDay, super.key});
+
+  final DateTime initialDay;
 
   @override
   State<DayPage> createState() => _DayPageState();
@@ -61,7 +64,7 @@ class _DayPageState extends State<DayPage> {
         14: FixedColumnWidth(_saveColumnWidth),
       };
 
-  DateTime _selectedDay = _dateOnly(DateTime.now());
+  late DateTime _selectedDay;
   List<Map<String, dynamic>> _projects = const [];
   List<Map<String, dynamic>> _tasks = const [];
   List<_DayEntryDraft> _rows = const [];
@@ -71,6 +74,20 @@ class _DayPageState extends State<DayPage> {
   @override
   void initState() {
     super.initState();
+    _selectedDay = dateOnly(widget.initialDay);
+    _loadDay();
+  }
+
+  @override
+  void didUpdateWidget(covariant DayPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    final nextDay = dateOnly(widget.initialDay);
+    if (_selectedDay == nextDay) {
+      return;
+    }
+
+    _selectedDay = nextDay;
     _loadDay();
   }
 
@@ -156,7 +173,7 @@ class _DayPageState extends State<DayPage> {
   }
 
   Future<void> _jumpToToday() async {
-    final today = _dateOnly(DateTime.now());
+    final today = dateOnly(DateTime.now());
     if (_selectedDay == today) {
       await _loadDay();
       return;
@@ -173,13 +190,13 @@ class _DayPageState extends State<DayPage> {
 
     setState(
       () =>
-          _selectedDay = _dateOnly(_selectedDay.add(Duration(days: dayOffset))),
+          _selectedDay = dateOnly(_selectedDay.add(Duration(days: dayOffset))),
     );
     await _loadDay();
   }
 
   Future<void> _handleDayChanged(DateTime value) async {
-    final nextDay = _dateOnly(value);
+    final nextDay = dateOnly(value);
     if (_selectedDay == nextDay) {
       return;
     }
@@ -554,12 +571,12 @@ class _DayPageState extends State<DayPage> {
 
   @override
   Widget build(BuildContext context) {
-    final dayDurationLabel = _formatDurationMinutes(_dayDurationMinutes);
+    final dayDurationLabel = formatDurationMinutes(_dayDurationMinutes);
 
     return FocusTraversalGroup(
       policy: ReadingOrderTraversalPolicy(),
       child: ScaffoldPage.scrollable(
-        header: PageHeader(title: Text(_formatDayHeading(_selectedDay))),
+        header: PageHeader(title: Text(formatDayHeading(_selectedDay))),
         children: [
           Card(
             child: Column(
@@ -896,10 +913,6 @@ Widget _tableGapCell() {
   return const SizedBox.shrink();
 }
 
-DateTime _dateOnly(DateTime value) {
-  return DateTime(value.year, value.month, value.day);
-}
-
 String _formatRowDuration(_DayEntryDraft row) {
   if (row.hasInvalidTimeInput) {
     return 'Invalid';
@@ -916,56 +929,7 @@ String _formatRowDuration(_DayEntryDraft row) {
     return 'Invalid';
   }
 
-  return _formatDurationMinutes(durationMinutes);
-}
-
-String _formatDurationMinutes(int durationMinutes) {
-  if (durationMinutes <= 0) {
-    return '0m';
-  }
-
-  final hours = durationMinutes ~/ 60;
-  final minutes = durationMinutes % 60;
-
-  if (hours == 0) {
-    return '${minutes}m';
-  }
-
-  if (minutes == 0) {
-    return '${hours}h';
-  }
-
-  return '${hours}h ${minutes}m';
-}
-
-String _formatDayHeading(DateTime day) {
-  const weekdayNames = [
-    'Monday',
-    'Tuesday',
-    'Wednesday',
-    'Thursday',
-    'Friday',
-    'Saturday',
-    'Sunday',
-  ];
-  const monthNames = [
-    'January',
-    'February',
-    'March',
-    'April',
-    'May',
-    'June',
-    'July',
-    'August',
-    'September',
-    'October',
-    'November',
-    'December',
-  ];
-
-  final weekdayName = weekdayNames[day.weekday - 1];
-  final monthName = monthNames[day.month - 1];
-  return '$weekdayName ${day.day} $monthName ${day.year}';
+  return formatDurationMinutes(durationMinutes);
 }
 
 class _DayEntryDraft {

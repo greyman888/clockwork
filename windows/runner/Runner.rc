@@ -89,13 +89,13 @@ BEGIN
     BEGIN
         BLOCK "040904e4"
         BEGIN
-            VALUE "CompanyName", "com.example" "\0"
-            VALUE "FileDescription", "clockwork" "\0"
+            VALUE "CompanyName", "Clockwork Software" "\0"
+            VALUE "FileDescription", "Clockwork" "\0"
             VALUE "FileVersion", VERSION_AS_STRING "\0"
-            VALUE "InternalName", "clockwork" "\0"
-            VALUE "LegalCopyright", "Copyright (C) 2026 com.example. All rights reserved." "\0"
-            VALUE "OriginalFilename", "clockwork.exe" "\0"
-            VALUE "ProductName", "clockwork" "\0"
+            VALUE "InternalName", "Clockwork" "\0"
+            VALUE "LegalCopyright", "Copyright (C) 2026 Clockwork Software. All rights reserved." "\0"
+            VALUE "OriginalFilename", "Clockwork.exe" "\0"
+            VALUE "ProductName", "Clockwork" "\0"
             VALUE "ProductVersion", VERSION_AS_STRING "\0"
         END
     END
