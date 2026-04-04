@@ -16,6 +16,7 @@ void main() {
   late StringBuffer stdoutBuffer;
   late StringBuffer stderrBuffer;
   late ClockworkDefinitionsCli cli;
+  late int initialManifestVersion;
 
   setUp(() async {
     tempDirectory = await Directory.systemTemp.createTemp(
@@ -31,6 +32,9 @@ void main() {
       requiredDefinitionsAssetPath,
     );
     await File(sourceManifestPath).copy(manifestPath);
+    initialManifestVersion = (await RequiredDefinitionsManifest.loadFromFile(
+      manifestPath,
+    )).manifestVersion;
 
     cli = ClockworkDefinitionsCli(
       defaultManifestPath: manifestPath,
@@ -71,7 +75,7 @@ void main() {
       );
       expect(componentKind.displayName, 'Billable Code');
       expect(componentKind.storageType, DbHelper.storageText);
-      expect(manifest.manifestVersion, 2);
+      expect(manifest.manifestVersion, initialManifestVersion + 1);
 
       final helper = DbHelper.forFilePath(
         dbPath: dbPath,

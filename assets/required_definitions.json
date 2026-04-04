@@ -1,5 +1,5 @@
 {
-  "manifest_version": 1,
+  "manifest_version": 4,
   "component_kinds": [
     {
       "name": "name",
@@ -42,18 +42,29 @@
       "display_name": "End Time",
       "storage_type": "integer",
       "semantic_type": "plain"
+    },
+    {
+      "name": "billable",
+      "display_name": "Billable",
+      "storage_type": "integer",
+      "semantic_type": "boolean"
     }
   ],
   "entity_kinds": [
     {
       "name": "project",
       "display_name": "Project",
-      "components": ["name"]
+      "components": [
+        "name"
+      ]
     },
     {
       "name": "task",
       "display_name": "Task",
-      "components": ["name", "parent"]
+      "components": [
+        "name",
+        "parent"
+      ]
     },
     {
       "name": "time_entry",
@@ -64,7 +75,8 @@
         "date",
         "note",
         "start_time",
-        "end_time"
+        "end_time",
+        "billable"
       ]
     }
   ],
@@ -78,6 +90,7 @@
       "duration_component": "duration",
       "date_component": "date",
       "note_component": "note",
+      "billable_component": "billable",
       "start_time_component": "start_time",
       "end_time_component": "end_time"
     }

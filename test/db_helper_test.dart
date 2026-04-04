@@ -306,6 +306,7 @@ void main() {
           'duration',
           'date',
           'note',
+          'billable',
           'start_time',
           'end_time',
         ]),
@@ -321,6 +322,7 @@ void main() {
           'duration',
           'date',
           'note',
+          'billable',
           'start_time',
           'end_time',
         ]),
@@ -431,6 +433,7 @@ void main() {
     expect(_valueForComponent(entity, 'duration'), 1.5);
     expect(_valueForComponent(entity, 'start_time'), 540);
     expect(_valueForComponent(entity, 'end_time'), 630);
+    expect(_valueForComponent(entity, 'billable'), 1);
     expect(_valueForComponent(entity, 'note'), 'Discovery session');
 
     await helper.saveDayEntry(
@@ -440,6 +443,7 @@ void main() {
       taskId: taskId,
       startMinutes: 9 * 60,
       endMinutes: 11 * 60,
+      billableValue: 0,
       note: 'Workshop extended',
     );
 
@@ -454,13 +458,92 @@ void main() {
     expect(entries.single['start_minutes'], 540);
     expect(entries.single['end_minutes'], 660);
     expect(entries.single['duration_hours'], 2.0);
+    expect(entries.single['billable_value'], 0);
     expect(entries.single['note'], 'Workshop extended');
 
     entity = await helper.getEntity(entryId);
     expect(entity, isNotNull);
     expect(_valueForComponent(entity!, 'duration'), 2.0);
     expect(_valueForComponent(entity, 'end_time'), 660);
+    expect(_valueForComponent(entity, 'billable'), 0);
     expect(_valueForComponent(entity, 'note'), 'Workshop extended');
+  });
+
+  test('saveDayEntry accepts 24:00 as an end time', () async {
+    final definitions = await _loadRequiredDayDefinitions(helper);
+
+    final projectId = await helper.createEntity(
+      kindId: definitions.projectKindId,
+      componentValues: {definitions.nameCompKindId: 'Project Atlas'},
+    );
+    final taskId = await helper.createEntity(
+      kindId: definitions.taskKindId,
+      componentValues: {
+        definitions.nameCompKindId: 'Late Support',
+        definitions.parentCompKindId: projectId,
+      },
+    );
+
+    final entryId = await helper.saveDayEntry(
+      date: DateTime(2026, 4, 5),
+      projectId: projectId,
+      taskId: taskId,
+      startMinutes: 23 * 60,
+      endMinutes: 24 * 60,
+      note: 'After-hours support',
+    );
+
+    final entity = await helper.getEntity(entryId);
+    expect(entity, isNotNull);
+    expect(_valueForComponent(entity!, 'start_time'), 1380);
+    expect(_valueForComponent(entity, 'end_time'), 1440);
+    expect(_valueForComponent(entity, 'duration'), 1.0);
+
+    final dayData = await helper.getDayPageData(DateTime(2026, 4, 5));
+    final entries = List<Map<String, dynamic>>.from(
+      dayData['entries'] as List<dynamic>? ?? const [],
+    );
+
+    expect(entries, hasLength(1));
+    expect(entries.single['start_minutes'], 1380);
+    expect(entries.single['end_minutes'], 1440);
+    expect(entries.single['duration_hours'], 1.0);
+  });
+
+  test('getDayPageData treats missing billable values as false', () async {
+    final definitions = await _loadRequiredDayDefinitions(helper);
+
+    final projectId = await helper.createEntity(
+      kindId: definitions.projectKindId,
+      componentValues: {definitions.nameCompKindId: 'Project Atlas'},
+    );
+    final taskId = await helper.createEntity(
+      kindId: definitions.taskKindId,
+      componentValues: {
+        definitions.nameCompKindId: 'Client Workshop',
+        definitions.parentCompKindId: projectId,
+      },
+    );
+
+    await helper.createEntity(
+      kindId: definitions.timeEntryKindId,
+      componentValues: {
+        definitions.parentCompKindId: taskId,
+        definitions.dateCompKindId: DateTime(2026, 4, 4).millisecondsSinceEpoch,
+        definitions.durationCompKindId: 1.0,
+        definitions.startTimeCompKindId: 9 * 60,
+        definitions.endTimeCompKindId: 10 * 60,
+        definitions.noteCompKindId: 'Legacy entry',
+      },
+    );
+
+    final dayData = await helper.getDayPageData(DateTime(2026, 4, 4));
+    final entries = List<Map<String, dynamic>>.from(
+      dayData['entries'] as List<dynamic>? ?? const [],
+    );
+
+    expect(entries, hasLength(1));
+    expect(entries.single['billable_value'], 0);
   });
 }
 
@@ -509,6 +592,11 @@ Future<_ClockworkDayTestDefinitions> _loadRequiredDayDefinitions(
 
   final nameCompKindId = _compKindIdByName(allCompKinds, 'name');
   final parentCompKindId = _compKindIdByName(allCompKinds, 'parent');
+  final dateCompKindId = _compKindIdByName(allCompKinds, 'date');
+  final durationCompKindId = _compKindIdByName(allCompKinds, 'duration');
+  final noteCompKindId = _compKindIdByName(allCompKinds, 'note');
+  final startTimeCompKindId = _compKindIdByName(allCompKinds, 'start_time');
+  final endTimeCompKindId = _compKindIdByName(allCompKinds, 'end_time');
   final projectKindId = _entityKindIdByName(allEntityKinds, 'project');
   final taskKindId = _entityKindIdByName(allEntityKinds, 'task');
   final timeEntryKindId = _entityKindIdByName(allEntityKinds, 'time_entry');
@@ -516,6 +604,11 @@ Future<_ClockworkDayTestDefinitions> _loadRequiredDayDefinitions(
   return _ClockworkDayTestDefinitions(
     nameCompKindId: nameCompKindId,
     parentCompKindId: parentCompKindId,
+    dateCompKindId: dateCompKindId,
+    durationCompKindId: durationCompKindId,
+    noteCompKindId: noteCompKindId,
+    startTimeCompKindId: startTimeCompKindId,
+    endTimeCompKindId: endTimeCompKindId,
     projectKindId: projectKindId,
     taskKindId: taskKindId,
     timeEntryKindId: timeEntryKindId,
@@ -526,6 +619,11 @@ class _ClockworkDayTestDefinitions {
   const _ClockworkDayTestDefinitions({
     required this.nameCompKindId,
     required this.parentCompKindId,
+    required this.dateCompKindId,
+    required this.durationCompKindId,
+    required this.noteCompKindId,
+    required this.startTimeCompKindId,
+    required this.endTimeCompKindId,
     required this.projectKindId,
     required this.taskKindId,
     required this.timeEntryKindId,
@@ -533,6 +631,11 @@ class _ClockworkDayTestDefinitions {
 
   final int nameCompKindId;
   final int parentCompKindId;
+  final int dateCompKindId;
+  final int durationCompKindId;
+  final int noteCompKindId;
+  final int startTimeCompKindId;
+  final int endTimeCompKindId;
   final int projectKindId;
   final int taskKindId;
   final int timeEntryKindId;

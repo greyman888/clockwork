@@ -79,6 +79,7 @@ class RequiredDefinitionsManifest {
       dayPage.durationCompKindName,
       dayPage.dateCompKindName,
       dayPage.noteCompKindName,
+      dayPage.billableCompKindName,
       dayPage.startTimeCompKindName,
       dayPage.endTimeCompKindName,
     ]) {
@@ -332,6 +333,7 @@ class RequiredDayPageDefinition {
     required this.durationCompKindName,
     required this.dateCompKindName,
     required this.noteCompKindName,
+    required this.billableCompKindName,
     required this.startTimeCompKindName,
     required this.endTimeCompKindName,
   });
@@ -344,6 +346,7 @@ class RequiredDayPageDefinition {
   final String durationCompKindName;
   final String dateCompKindName;
   final String noteCompKindName;
+  final String billableCompKindName;
   final String startTimeCompKindName;
   final String endTimeCompKindName;
 
@@ -357,6 +360,7 @@ class RequiredDayPageDefinition {
       durationCompKindName: _jsonString(json, 'duration_component'),
       dateCompKindName: _jsonString(json, 'date_component'),
       noteCompKindName: _jsonString(json, 'note_component'),
+      billableCompKindName: _jsonString(json, 'billable_component'),
       startTimeCompKindName: _jsonString(json, 'start_time_component'),
       endTimeCompKindName: _jsonString(json, 'end_time_component'),
     );
@@ -372,6 +376,7 @@ class RequiredDayPageDefinition {
       'duration_component': durationCompKindName,
       'date_component': dateCompKindName,
       'note_component': noteCompKindName,
+      'billable_component': billableCompKindName,
       'start_time_component': startTimeCompKindName,
       'end_time_component': endTimeCompKindName,
     };

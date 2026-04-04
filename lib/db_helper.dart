@@ -1130,6 +1130,12 @@ class DbHelper {
               final note =
                   _componentValueForKindId(entity, definitions.noteCompKindId)
                       as String?;
+              final billableValue =
+                  _componentValueForKindId(
+                        entity,
+                        definitions.billableCompKindId,
+                      )
+                      as int?;
 
               return <String, dynamic>{
                 'id': entryId,
@@ -1141,6 +1147,7 @@ class DbHelper {
                 'start_minutes': startMinutes,
                 'end_minutes': endMinutes,
                 'duration_hours': duration?.toDouble(),
+                'billable_value': billableValue ?? 0,
                 'note': note ?? '',
               };
             })
@@ -1188,6 +1195,7 @@ class DbHelper {
     required int taskId,
     required int startMinutes,
     required int endMinutes,
+    int? billableValue,
     String? note,
     int? entryId,
   }) async {
@@ -1197,12 +1205,19 @@ class DbHelper {
       startMinutes,
       'Start time',
     );
-    final normalizedEndMinutes = _normalizeDayMinutes(endMinutes, 'End time');
+    final normalizedEndMinutes = _normalizeDayMinutes(
+      endMinutes,
+      'End time',
+      allowEndOfDay: true,
+    );
 
     if (normalizedEndMinutes <= normalizedStartMinutes) {
       throw Exception('End time must be later than start time.');
     }
 
+    final normalizedBillableValue = billableValue == null
+        ? 1
+        : _normalizeBooleanValue(billableValue);
     final manifest = await _getRequiredDefinitionsManifest();
 
     return database.transaction((txn) async {
@@ -1244,6 +1259,7 @@ class DbHelper {
         definitions.durationCompKindId: durationHours,
         definitions.startTimeCompKindId: normalizedStartMinutes,
         definitions.endTimeCompKindId: normalizedEndMinutes,
+        definitions.billableCompKindId: normalizedBillableValue,
         definitions.noteCompKindId:
             normalizedNote == null || normalizedNote.isEmpty
             ? null
@@ -1414,6 +1430,10 @@ class DbHelper {
       db,
       dayPage.noteCompKindName,
     );
+    final billableCompKind = await _requireActiveCompKindByName(
+      db,
+      dayPage.billableCompKindName,
+    );
     final startTimeCompKind = await _requireActiveCompKindByName(
       db,
       dayPage.startTimeCompKindName,
@@ -1432,6 +1452,7 @@ class DbHelper {
       durationCompKindId: durationCompKind['id'] as int,
       dateCompKindId: dateCompKind['id'] as int,
       noteCompKindId: noteCompKind['id'] as int,
+      billableCompKindId: billableCompKind['id'] as int,
       startTimeCompKindId: startTimeCompKind['id'] as int,
       endTimeCompKindId: endTimeCompKind['id'] as int,
     );
@@ -1784,9 +1805,19 @@ class DbHelper {
     return DateTime(value.year, value.month, value.day);
   }
 
-  int _normalizeDayMinutes(int value, String label) {
-    if (value < 0 || value > 1439) {
-      throw Exception('$label must be between 00:00 and 23:59.');
+  int _normalizeDayMinutes(
+    int value,
+    String label, {
+    bool allowEndOfDay = false,
+  }) {
+    final maxValue = allowEndOfDay ? 1440 : 1439;
+    if (value < 0 || value > maxValue) {
+      final upperBound = allowEndOfDay ? '24:00' : '23:59';
+      throw Exception('$label must be between 00:00 and $upperBound.');
+    }
+
+    if (allowEndOfDay && value == 1440) {
+      return value;
     }
 
     return value;
@@ -2563,6 +2594,7 @@ class _ClockworkDayDefinitions {
     required this.durationCompKindId,
     required this.dateCompKindId,
     required this.noteCompKindId,
+    required this.billableCompKindId,
     required this.startTimeCompKindId,
     required this.endTimeCompKindId,
   });
@@ -2575,6 +2607,7 @@ class _ClockworkDayDefinitions {
   final int durationCompKindId;
   final int dateCompKindId;
   final int noteCompKindId;
+  final int billableCompKindId;
   final int startTimeCompKindId;
   final int endTimeCompKindId;
 }

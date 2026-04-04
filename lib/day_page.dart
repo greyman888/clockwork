@@ -2,6 +2,7 @@ import 'package:flutter/services.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
 import 'app_db.dart';
+import 'day_entry_validation.dart';
 import 'editor_helpers.dart';
 
 class DayPage extends StatefulWidget {
@@ -14,29 +15,50 @@ class DayPage extends StatefulWidget {
 class _DayPageState extends State<DayPage> {
   static const double _projectColumnWidth = 220;
   static const double _taskColumnWidth = 240;
-  static const double _topRowSecondaryWidth =
-      (_taskColumnWidth - _standardColumnGap) / 2;
+  static const double _billableColumnWidth = 40;
+  static const double _billableHeaderInset = 8;
+  static const double _taskToBillableGap = 6;
+  static const double _billableToStartGap = 8;
   static const double _timeColumnWidth = 102;
-  static const double _durationColumnWidth = 104;
+  static const double _durationColumnWidth = 80;
   static const double _noteColumnWidth = 320;
-  static const double _saveColumnWidth = 88;
+  static const double _saveColumnWidth = 76;
   static const double _standardColumnGap = 12;
   static const double _tightColumnGap = 4;
+  static const double _actionButtonSize = 32;
+  static const double _entryTableWidth =
+      _projectColumnWidth +
+      _standardColumnGap +
+      _taskColumnWidth +
+      _taskToBillableGap +
+      _billableColumnWidth +
+      _billableToStartGap +
+      _timeColumnWidth +
+      _tightColumnGap +
+      _timeColumnWidth +
+      _tightColumnGap +
+      _durationColumnWidth +
+      _standardColumnGap +
+      _noteColumnWidth +
+      _standardColumnGap +
+      _saveColumnWidth;
   static const Map<int, TableColumnWidth> _entryTableColumnWidths =
       <int, TableColumnWidth>{
         0: FixedColumnWidth(_projectColumnWidth),
         1: FixedColumnWidth(_standardColumnGap),
         2: FixedColumnWidth(_taskColumnWidth),
-        3: FixedColumnWidth(_standardColumnGap),
-        4: FixedColumnWidth(_timeColumnWidth),
-        5: FixedColumnWidth(_tightColumnGap),
+        3: FixedColumnWidth(_taskToBillableGap),
+        4: FixedColumnWidth(_billableColumnWidth),
+        5: FixedColumnWidth(_billableToStartGap),
         6: FixedColumnWidth(_timeColumnWidth),
         7: FixedColumnWidth(_tightColumnGap),
-        8: FixedColumnWidth(_durationColumnWidth),
-        9: FixedColumnWidth(_standardColumnGap),
-        10: FixedColumnWidth(_noteColumnWidth),
+        8: FixedColumnWidth(_timeColumnWidth),
+        9: FixedColumnWidth(_tightColumnGap),
+        10: FixedColumnWidth(_durationColumnWidth),
         11: FixedColumnWidth(_standardColumnGap),
-        12: FixedColumnWidth(_saveColumnWidth),
+        12: FixedColumnWidth(_noteColumnWidth),
+        13: FixedColumnWidth(_standardColumnGap),
+        14: FixedColumnWidth(_saveColumnWidth),
       };
 
   DateTime _selectedDay = _dateOnly(DateTime.now());
@@ -88,6 +110,7 @@ class _DayPageState extends State<DayPage> {
         _tasks = tasks;
         _rows = nextRows;
       });
+      _focusNewRowProjectField(nextRows, projects);
     } catch (error) {
       if (!mounted) {
         return;
@@ -114,6 +137,7 @@ class _DayPageState extends State<DayPage> {
             entryId: entry['id'] as int?,
             projectId: entry['project_id'] as int?,
             taskId: entry['task_id'] as int?,
+            billableValue: entry['billable_value'] as int? ?? 0,
             startMinutes: entry['start_minutes'] as int?,
             endMinutes: entry['end_minutes'] as int?,
             note: entry['note'] as String? ?? '',
@@ -142,6 +166,18 @@ class _DayPageState extends State<DayPage> {
     await _loadDay();
   }
 
+  Future<void> _shiftSelectedDay(int dayOffset) async {
+    if (dayOffset == 0) {
+      return;
+    }
+
+    setState(
+      () =>
+          _selectedDay = _dateOnly(_selectedDay.add(Duration(days: dayOffset))),
+    );
+    await _loadDay();
+  }
+
   Future<void> _handleDayChanged(DateTime value) async {
     final nextDay = _dateOnly(value);
     if (_selectedDay == nextDay) {
@@ -160,16 +196,32 @@ class _DayPageState extends State<DayPage> {
     return _tasks.where((task) => task['project_id'] == projectId).toList();
   }
 
+  void _focusNewRowProjectField(
+    List<_DayEntryDraft> rows,
+    List<Map<String, dynamic>> projects,
+  ) {
+    if (rows.isEmpty || projects.isEmpty) {
+      return;
+    }
+
+    final newRow = rows.last;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+
+      newRow.projectFocusNode.requestFocus();
+    });
+  }
+
   void _handleProjectChanged(_DayEntryDraft row, int? projectId) {
-    final availableTaskIds = _tasksForProject(
-      projectId,
-    ).map((task) => task['id'] as int).toSet();
+    final availableTasks = _tasksForProject(projectId);
 
     setState(() {
       row.projectId = projectId;
-      if (!availableTaskIds.contains(row.taskId)) {
-        row.taskId = null;
-      }
+      row.taskId = availableTasks.isEmpty
+          ? null
+          : availableTasks.first['id'] as int;
     });
   }
 
@@ -182,6 +234,7 @@ class _DayPageState extends State<DayPage> {
     final taskId = row.taskId;
     final startMinutes = row.startMinutes;
     final endMinutes = row.endMinutes;
+    final billableValue = row.billableValue;
 
     if (projectId == null ||
         taskId == null ||
@@ -205,6 +258,7 @@ class _DayPageState extends State<DayPage> {
         taskId: taskId,
         startMinutes: startMinutes,
         endMinutes: endMinutes,
+        billableValue: billableValue,
         note: row.noteController.text,
         entryId: row.entryId,
       );
@@ -222,6 +276,53 @@ class _DayPageState extends State<DayPage> {
       await showNoticeDialog(
         context,
         title: 'Unable to save day entry',
+        message: error.toString(),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => row.isSaving = false);
+      }
+    }
+  }
+
+  Future<void> _deleteRow(_DayEntryDraft row) async {
+    final entryId = row.entryId;
+    if (entryId == null) {
+      return;
+    }
+
+    final confirmed = await showConfirmationDialog(
+      context,
+      title: 'Delete day entry?',
+      message:
+          'This permanently deletes the time entry and all of its component '
+          'values. The delete will be blocked if another entity still '
+          'references it.',
+      confirmLabel: 'Delete entry',
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setState(() => row.isSaving = true);
+
+    try {
+      await dbHelper.deleteEntity(entryId);
+
+      if (!mounted) {
+        return;
+      }
+
+      await _loadDay();
+    } catch (error) {
+      if (!mounted) {
+        return;
+      }
+
+      await showNoticeDialog(
+        context,
+        title: 'Unable to delete day entry',
         message: error.toString(),
       );
     } finally {
@@ -269,20 +370,190 @@ class _DayPageState extends State<DayPage> {
     return endMinutes - startMinutes;
   }
 
-  Widget _buildSaveButton(_DayEntryDraft row) {
-    final onPressed = _canSaveRow(row) ? () => _saveRow(row) : null;
-    final child = Text(row.isSaving ? 'Saving...' : 'Save');
+  Set<_DayEntryDraft> _overlappingRows() {
+    final overlappingIndices = findOverlappingDayEntryIndices(
+      _rows.map((row) => row.timeRange).toList(growable: false),
+    );
 
-    if (row.entryId == null) {
-      return FilledButton(onPressed: onPressed, child: child);
+    return overlappingIndices.map((index) => _rows[index]).toSet();
+  }
+
+  void _handleTimeFieldExited(_DayEntryDraft row) {
+    if (row.showTimeWarnings) {
+      return;
     }
 
-    return Button(onPressed: onPressed, child: child);
+    setState(() => row.showTimeWarnings = true);
+  }
+
+  Widget _buildActionButton({
+    required IconData icon,
+    required String tooltip,
+    required VoidCallback? onPressed,
+    bool filled = false,
+  }) {
+    final buttonStyle = const ButtonStyle(
+      padding: WidgetStatePropertyAll(EdgeInsets.zero),
+    );
+
+    final button = filled
+        ? FilledButton(
+            style: buttonStyle,
+            onPressed: onPressed,
+            child: Icon(icon, size: 16),
+          )
+        : Button(
+            style: buttonStyle,
+            onPressed: onPressed,
+            child: Icon(icon, size: 16),
+          );
+
+    return Tooltip(
+      message: tooltip,
+      child: SizedBox(
+        width: _actionButtonSize,
+        height: _actionButtonSize,
+        child: button,
+      ),
+    );
+  }
+
+  Widget _buildRowActions(_DayEntryDraft row) {
+    final saveButton = _buildActionButton(
+      icon: FluentIcons.save,
+      tooltip: row.isSaving ? 'Saving entry' : 'Save entry',
+      onPressed: _canSaveRow(row) ? () => _saveRow(row) : null,
+      filled: row.entryId == null,
+    );
+
+    final buttons = <Widget>[saveButton];
+    if (row.entryId != null) {
+      buttons.add(const SizedBox(width: _standardColumnGap));
+      buttons.add(
+        _buildActionButton(
+          icon: FluentIcons.delete,
+          tooltip: 'Delete entry',
+          onPressed: row.isSaving ? null : () => _deleteRow(row),
+        ),
+      );
+    }
+
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Row(mainAxisSize: MainAxisSize.min, children: buttons),
+    );
+  }
+
+  Widget _buildDayNavigationControls() {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 1),
+      child: Row(
+        children: [
+          _buildActionButton(
+            icon: FluentIcons.chevron_left,
+            tooltip: 'Previous day',
+            onPressed: () => _shiftSelectedDay(-1),
+          ),
+          const SizedBox(width: _standardColumnGap),
+          Expanded(
+            child: FilledButton(
+              onPressed: _jumpToToday,
+              child: const Text('Today'),
+            ),
+          ),
+          const SizedBox(width: _standardColumnGap),
+          _buildActionButton(
+            icon: FluentIcons.chevron_right,
+            tooltip: 'Next day',
+            onPressed: () => _shiftSelectedDay(1),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTopControls(BuildContext context, String dayDurationLabel) {
+    final theme = FluentTheme.of(context);
+
+    return Table(
+      columnWidths: _entryTableColumnWidths,
+      defaultVerticalAlignment: TableCellVerticalAlignment.bottom,
+      children: [
+        TableRow(
+          children: [
+            _tableCell(
+              bottomPadding: 0,
+              child: SizedBox(
+                width: double.infinity,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Date', style: theme.typography.bodyStrong),
+                    const SizedBox(height: 8),
+                    DatePicker(
+                      selected: _selectedDay,
+                      showMonth: true,
+                      showDay: true,
+                      showYear: true,
+                      onChanged: _handleDayChanged,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            _tableGapCell(),
+            _tableCell(
+              bottomPadding: 0,
+              child: SizedBox(
+                width: double.infinity,
+                child: _buildDayNavigationControls(),
+              ),
+            ),
+            _tableGapCell(),
+            const SizedBox.shrink(),
+            _tableGapCell(),
+            const SizedBox.shrink(),
+            _tableGapCell(),
+            const SizedBox.shrink(),
+            _tableGapCell(),
+            _tableCell(
+              bottomPadding: 0,
+              child: SizedBox(
+                width: double.infinity,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('Day Total', style: theme.typography.bodyStrong),
+                    const SizedBox(height: 8),
+                    Container(
+                      height: 32,
+                      alignment: Alignment.centerLeft,
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: theme.inactiveColor),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                      child: Text(
+                        dayDurationLabel,
+                        style: theme.typography.body,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            _tableGapCell(),
+            const SizedBox.shrink(),
+            _tableGapCell(),
+            const SizedBox.shrink(),
+          ],
+        ),
+      ],
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = FluentTheme.of(context);
     final dayDurationLabel = _formatDurationMinutes(_dayDurationMinutes);
 
     return FocusTraversalGroup(
@@ -294,68 +565,20 @@ class _DayPageState extends State<DayPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    SizedBox(
-                      width: _projectColumnWidth,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Date', style: theme.typography.bodyStrong),
-                          const SizedBox(height: 8),
-                          DatePicker(
-                            selected: _selectedDay,
-                            showMonth: true,
-                            showDay: true,
-                            showYear: true,
-                            onChanged: _handleDayChanged,
-                          ),
-                        ],
-                      ),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: SizedBox(
+                    width: _entryTableWidth,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildTopControls(context, dayDurationLabel),
+                        const SizedBox(height: 12),
+                        _buildContent(context),
+                      ],
                     ),
-                    const SizedBox(width: _standardColumnGap),
-                    SizedBox(
-                      width: _topRowSecondaryWidth,
-                      child: Padding(
-                        padding: const EdgeInsets.only(bottom: 1),
-                        child: FilledButton(
-                          onPressed: _jumpToToday,
-                          child: const Text('Today'),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: _standardColumnGap),
-                    SizedBox(
-                      width: _topRowSecondaryWidth,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Total Duration',
-                            style: theme.typography.bodyStrong,
-                          ),
-                          const SizedBox(height: 8),
-                          Container(
-                            height: 32,
-                            alignment: Alignment.centerLeft,
-                            padding: const EdgeInsets.symmetric(horizontal: 10),
-                            decoration: BoxDecoration(
-                              border: Border.all(color: theme.inactiveColor),
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: Text(
-                              dayDurationLabel,
-                              style: theme.typography.body,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
-                const SizedBox(height: 12),
-                _buildContent(context),
               ],
             ),
           ),
@@ -366,6 +589,7 @@ class _DayPageState extends State<DayPage> {
 
   Widget _buildContent(BuildContext context) {
     final theme = FluentTheme.of(context);
+    final overlappingRows = _overlappingRows();
 
     if (_isLoading && _rows.isEmpty) {
       return const Padding(
@@ -400,16 +624,15 @@ class _DayPageState extends State<DayPage> {
       );
     }
 
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Table(
-        columnWidths: _entryTableColumnWidths,
-        defaultVerticalAlignment: TableCellVerticalAlignment.bottom,
-        children: [
-          _buildEntryHeaderRow(context),
-          ..._rows.map((row) => _buildEntryTableRow(context, row)),
-        ],
-      ),
+    return Table(
+      columnWidths: _entryTableColumnWidths,
+      defaultVerticalAlignment: TableCellVerticalAlignment.bottom,
+      children: [
+        _buildEntryHeaderRow(context),
+        ..._rows.map(
+          (row) => _buildEntryTableRow(context, row, overlappingRows),
+        ),
+      ],
     );
   }
 
@@ -426,6 +649,14 @@ class _DayPageState extends State<DayPage> {
         _tableCell(
           bottomPadding: 10,
           child: _headerCell(label: 'Task', style: theme),
+        ),
+        _tableGapCell(),
+        _tableCell(
+          bottomPadding: 10,
+          child: Padding(
+            padding: const EdgeInsets.only(left: _billableHeaderInset),
+            child: _headerCell(label: 'Bill', style: theme),
+          ),
         ),
         _tableGapCell(),
         _tableCell(
@@ -453,10 +684,18 @@ class _DayPageState extends State<DayPage> {
     );
   }
 
-  TableRow _buildEntryTableRow(BuildContext context, _DayEntryDraft row) {
+  TableRow _buildEntryTableRow(
+    BuildContext context,
+    _DayEntryDraft row,
+    Set<_DayEntryDraft> overlappingRows,
+  ) {
     final theme = FluentTheme.of(context);
     final tasksForProject = _tasksForProject(row.projectId);
-    final durationLabel = _formatDuration(row.startMinutes, row.endMinutes);
+    final durationLabel = _formatRowDuration(row);
+    final showOverlapWarning =
+        row.showTimeWarnings && overlappingRows.contains(row);
+    final showEndWarning =
+        row.showTimeWarnings && (showOverlapWarning || row.hasInvalidEndTime);
 
     return TableRow(
       children: [
@@ -468,6 +707,7 @@ class _DayPageState extends State<DayPage> {
               child: ComboBox<int?>(
                 value: row.projectId,
                 isExpanded: true,
+                focusNode: row.projectFocusNode,
                 items: [
                   const ComboBoxItem<int?>(
                     value: null,
@@ -525,13 +765,24 @@ class _DayPageState extends State<DayPage> {
         _tableCell(
           child: _orderedField(
             order: 3,
-            child: Align(
-              alignment: Alignment.centerLeft,
-              child: _TimeInput(
-                hourController: row.startHourController,
-                minuteController: row.startMinuteController,
-                enabled: !row.isSaving,
-                onChanged: () => setState(() {}),
+            child: SizedBox(
+              width: double.infinity,
+              child: SizedBox(
+                height: 32,
+                child: Align(
+                  alignment: Alignment.center,
+                  child: Checkbox(
+                    checked: row.billableValue == 1,
+                    onChanged: row.isSaving
+                        ? null
+                        : (value) {
+                            setState(
+                              () =>
+                                  row.billableValue = (value ?? false) ? 1 : 0,
+                            );
+                          },
+                  ),
+                ),
               ),
             ),
           ),
@@ -543,10 +794,37 @@ class _DayPageState extends State<DayPage> {
             child: Align(
               alignment: Alignment.centerLeft,
               child: _TimeInput(
+                hourController: row.startHourController,
+                minuteController: row.startMinuteController,
+                enabled: !row.isSaving,
+                onChanged: () => setState(() {}),
+                onFocusChange: (hasFocus) {
+                  if (!hasFocus) {
+                    _handleTimeFieldExited(row);
+                  }
+                },
+                showWarning: showOverlapWarning,
+              ),
+            ),
+          ),
+        ),
+        _tableGapCell(),
+        _tableCell(
+          child: _orderedField(
+            order: 5,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: _TimeInput(
                 hourController: row.endHourController,
                 minuteController: row.endMinuteController,
                 enabled: !row.isSaving,
                 onChanged: () => setState(() {}),
+                onFocusChange: (hasFocus) {
+                  if (!hasFocus) {
+                    _handleTimeFieldExited(row);
+                  }
+                },
+                showWarning: showEndWarning,
               ),
             ),
           ),
@@ -570,7 +848,7 @@ class _DayPageState extends State<DayPage> {
         _tableGapCell(),
         _tableCell(
           child: _orderedField(
-            order: 5,
+            order: 6,
             child: SizedBox(
               width: double.infinity,
               child: TextBox(
@@ -584,12 +862,12 @@ class _DayPageState extends State<DayPage> {
         _tableGapCell(),
         _tableCell(
           child: _orderedField(
-            order: 6,
+            order: 7,
             child: SizedBox(
               width: double.infinity,
               child: Padding(
                 padding: const EdgeInsets.only(bottom: 1),
-                child: _buildSaveButton(row),
+                child: _buildRowActions(row),
               ),
             ),
           ),
@@ -622,7 +900,13 @@ DateTime _dateOnly(DateTime value) {
   return DateTime(value.year, value.month, value.day);
 }
 
-String _formatDuration(int? startMinutes, int? endMinutes) {
+String _formatRowDuration(_DayEntryDraft row) {
+  if (row.hasInvalidTimeInput) {
+    return 'Invalid';
+  }
+
+  final startMinutes = row.startMinutes;
+  final endMinutes = row.endMinutes;
   if (startMinutes == null || endMinutes == null) {
     return '--';
   }
@@ -689,6 +973,7 @@ class _DayEntryDraft {
     this.entryId,
     this.projectId,
     this.taskId,
+    this.billableValue = 0,
     int? startMinutes,
     int? endMinutes,
     String note = '',
@@ -710,6 +995,7 @@ class _DayEntryDraft {
     : entryId = null,
       projectId = null,
       taskId = null,
+      billableValue = 1,
       noteController = TextEditingController(),
       startHourController = TextEditingController(),
       startMinuteController = TextEditingController(),
@@ -719,12 +1005,15 @@ class _DayEntryDraft {
   final int? entryId;
   int? projectId;
   int? taskId;
+  int billableValue;
+  final FocusNode projectFocusNode = FocusNode();
   final TextEditingController noteController;
   final TextEditingController startHourController;
   final TextEditingController startMinuteController;
   final TextEditingController endHourController;
   final TextEditingController endMinuteController;
   bool isSaving = false;
+  bool showTimeWarnings = false;
 
   int? get startMinutes {
     return _minutesFromParts(
@@ -734,10 +1023,51 @@ class _DayEntryDraft {
   }
 
   int? get endMinutes {
-    return _minutesFromParts(endHourController.text, endMinuteController.text);
+    return _minutesFromParts(
+      endHourController.text,
+      endMinuteController.text,
+      allowEndOfDay: true,
+    );
+  }
+
+  bool get hasInvalidEndTime {
+    final start = startMinutes;
+    final end = endMinutes;
+
+    return start != null && end != null && end <= start;
+  }
+
+  bool get hasInvalidStartTimeInput {
+    return _hasInvalidTimeInput(
+      startHourController.text,
+      startMinuteController.text,
+    );
+  }
+
+  bool get hasInvalidEndTimeInput {
+    return _hasInvalidTimeInput(
+      endHourController.text,
+      endMinuteController.text,
+      allowEndOfDay: true,
+    );
+  }
+
+  bool get hasInvalidTimeInput {
+    return hasInvalidStartTimeInput || hasInvalidEndTimeInput;
+  }
+
+  DayEntryTimeRange? get timeRange {
+    final start = startMinutes;
+    final end = endMinutes;
+    if (start == null || end == null) {
+      return null;
+    }
+
+    return DayEntryTimeRange(startMinutes: start, endMinutes: end);
   }
 
   void dispose() {
+    projectFocusNode.dispose();
     startHourController.dispose();
     startMinuteController.dispose();
     endHourController.dispose();
@@ -752,68 +1082,115 @@ class _TimeInput extends StatelessWidget {
     required this.minuteController,
     required this.enabled,
     required this.onChanged,
+    required this.onFocusChange,
+    required this.showWarning,
   });
 
   final TextEditingController hourController;
   final TextEditingController minuteController;
   final bool enabled;
   final VoidCallback onChanged;
+  final ValueChanged<bool> onFocusChange;
+  final bool showWarning;
 
   @override
   Widget build(BuildContext context) {
     final theme = FluentTheme.of(context);
+    final warningColor = showWarning ? Colors.errorPrimaryColor : null;
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.center,
-      children: [
-        SizedBox(
-          width: 42,
-          child: TextBox(
-            controller: hourController,
-            placeholder: 'HH',
-            textAlign: TextAlign.center,
-            keyboardType: TextInputType.number,
-            textInputAction: TextInputAction.next,
-            inputFormatters: [
-              FilteringTextInputFormatter.digitsOnly,
-              LengthLimitingTextInputFormatter(2),
-            ],
-            enabled: enabled,
-            onChanged: (_) => onChanged(),
+    return Focus(
+      canRequestFocus: false,
+      skipTraversal: true,
+      onFocusChange: onFocusChange,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          SizedBox(
+            width: 42,
+            child: TextBox(
+              controller: hourController,
+              placeholder: 'HH',
+              textAlign: TextAlign.center,
+              keyboardType: TextInputType.number,
+              textInputAction: TextInputAction.next,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(2),
+              ],
+              enabled: enabled,
+              highlightColor: warningColor,
+              unfocusedColor: warningColor,
+              onChanged: (_) => onChanged(),
+            ),
           ),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: Text(':', style: theme.typography.bodyStrong),
-        ),
-        SizedBox(
-          width: 42,
-          child: TextBox(
-            controller: minuteController,
-            placeholder: 'MM',
-            textAlign: TextAlign.center,
-            keyboardType: TextInputType.number,
-            textInputAction: TextInputAction.next,
-            inputFormatters: [
-              FilteringTextInputFormatter.digitsOnly,
-              LengthLimitingTextInputFormatter(2),
-            ],
-            enabled: enabled,
-            onChanged: (_) => onChanged(),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4),
+            child: Text(':', style: theme.typography.bodyStrong),
           ),
-        ),
-      ],
+          SizedBox(
+            width: 42,
+            child: TextBox(
+              controller: minuteController,
+              placeholder: 'MM',
+              textAlign: TextAlign.center,
+              keyboardType: TextInputType.number,
+              textInputAction: TextInputAction.next,
+              inputFormatters: [
+                FilteringTextInputFormatter.digitsOnly,
+                LengthLimitingTextInputFormatter(2),
+              ],
+              enabled: enabled,
+              highlightColor: warningColor,
+              unfocusedColor: warningColor,
+              onChanged: (_) => onChanged(),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
 
-int? _minutesFromParts(String hourText, String minuteText) {
+bool _hasInvalidTimeInput(
+  String hourText,
+  String minuteText, {
+  bool allowEndOfDay = false,
+}) {
+  final hourValue = hourText.trim();
+  final minuteValue = minuteText.trim();
+
+  if (hourValue.isEmpty && minuteValue.isEmpty) {
+    return false;
+  }
+
+  final hour = int.tryParse(hourValue);
+  final minute = int.tryParse(minuteValue);
+  if (hour == null || minute == null) {
+    return false;
+  }
+
+  if (allowEndOfDay && hour == 24 && minute == 0) {
+    return false;
+  }
+
+  return hour < 0 || hour > 23 || minute < 0 || minute > 59;
+}
+
+int? _minutesFromParts(
+  String hourText,
+  String minuteText, {
+  bool allowEndOfDay = false,
+}) {
   final hour = int.tryParse(hourText.trim());
   final minute = int.tryParse(minuteText.trim());
 
   if (hour == null || minute == null) {
     return null;
+  }
+
+  if (allowEndOfDay && hour == 24 && minute == 0) {
+    return 24 * 60;
   }
 
   if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
