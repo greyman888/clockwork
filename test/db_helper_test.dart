@@ -801,77 +801,80 @@ void main() {
     expect(weekData['week_total_minutes'], 150);
   });
 
-  test('getWeekPageData sorts rows by total then name then billable', () async {
-    final definitions = await _loadRequiredDayDefinitions(helper);
-    final atlasIds = await _createProjectAndTask(
-      helper,
-      definitions,
-      projectName: 'Project Atlas',
-      taskName: 'Analysis',
-    );
-    final bravoIds = await _createProjectAndTask(
-      helper,
-      definitions,
-      projectName: 'Project Bravo',
-      taskName: 'Design',
-    );
-    final zephyrIds = await _createProjectAndTask(
-      helper,
-      definitions,
-      projectName: 'Project Zephyr',
-      taskName: 'Support',
-    );
+  test(
+    'getWeekPageData sorts rows by project then task then billable',
+    () async {
+      final definitions = await _loadRequiredDayDefinitions(helper);
+      final atlasIds = await _createProjectAndTask(
+        helper,
+        definitions,
+        projectName: 'Project Atlas',
+        taskName: 'Analysis',
+      );
+      final bravoIds = await _createProjectAndTask(
+        helper,
+        definitions,
+        projectName: 'Project Bravo',
+        taskName: 'Design',
+      );
+      final zephyrIds = await _createProjectAndTask(
+        helper,
+        definitions,
+        projectName: 'Project Zephyr',
+        taskName: 'Support',
+      );
 
-    await helper.saveDayEntry(
-      date: DateTime(2026, 4, 6),
-      projectId: atlasIds.projectId,
-      taskId: atlasIds.taskId,
-      startMinutes: 9 * 60,
-      endMinutes: 12 * 60,
-      billableValue: 1,
-    );
-    await helper.saveDayEntry(
-      date: DateTime(2026, 4, 7),
-      projectId: atlasIds.projectId,
-      taskId: atlasIds.taskId,
-      startMinutes: 9 * 60,
-      endMinutes: 12 * 60,
-      billableValue: 0,
-    );
-    await helper.saveDayEntry(
-      date: DateTime(2026, 4, 8),
-      projectId: bravoIds.projectId,
-      taskId: bravoIds.taskId,
-      startMinutes: 9 * 60,
-      endMinutes: 12 * 60,
-      billableValue: 1,
-    );
-    await helper.saveDayEntry(
-      date: DateTime(2026, 4, 9),
-      projectId: zephyrIds.projectId,
-      taskId: zephyrIds.taskId,
-      startMinutes: 9 * 60,
-      endMinutes: 11 * 60,
-      billableValue: 1,
-    );
+      await helper.saveDayEntry(
+        date: DateTime(2026, 4, 6),
+        projectId: atlasIds.projectId,
+        taskId: atlasIds.taskId,
+        startMinutes: 9 * 60,
+        endMinutes: 12 * 60,
+        billableValue: 1,
+      );
+      await helper.saveDayEntry(
+        date: DateTime(2026, 4, 7),
+        projectId: atlasIds.projectId,
+        taskId: atlasIds.taskId,
+        startMinutes: 9 * 60,
+        endMinutes: 12 * 60,
+        billableValue: 0,
+      );
+      await helper.saveDayEntry(
+        date: DateTime(2026, 4, 8),
+        projectId: bravoIds.projectId,
+        taskId: bravoIds.taskId,
+        startMinutes: 9 * 60,
+        endMinutes: 13 * 60,
+        billableValue: 1,
+      );
+      await helper.saveDayEntry(
+        date: DateTime(2026, 4, 9),
+        projectId: zephyrIds.projectId,
+        taskId: zephyrIds.taskId,
+        startMinutes: 9 * 60,
+        endMinutes: 11 * 60,
+        billableValue: 1,
+      );
 
-    final weekData = await helper.getWeekPageData(DateTime(2026, 4, 9));
-    final rows = List<Map<String, dynamic>>.from(
-      weekData['rows'] as List<dynamic>? ?? const [],
-    );
+      final weekData = await helper.getWeekPageData(DateTime(2026, 4, 9));
+      final rows = List<Map<String, dynamic>>.from(
+        weekData['rows'] as List<dynamic>? ?? const [],
+      );
 
-    expect(rows, hasLength(4));
-    expect(rows[0]['project_name'], 'Project Atlas');
-    expect(rows[0]['task_name'], 'Analysis');
-    expect(rows[0]['billable_value'], 1);
-    expect(rows[1]['project_name'], 'Project Atlas');
-    expect(rows[1]['task_name'], 'Analysis');
-    expect(rows[1]['billable_value'], 0);
-    expect(rows[2]['project_name'], 'Project Bravo');
-    expect(rows[2]['task_name'], 'Design');
-    expect(rows[3]['project_name'], 'Project Zephyr');
-    expect(rows[3]['task_name'], 'Support');
-  });
+      expect(rows, hasLength(4));
+      expect(rows[0]['project_name'], 'Project Atlas');
+      expect(rows[0]['task_name'], 'Analysis');
+      expect(rows[0]['billable_value'], 1);
+      expect(rows[1]['project_name'], 'Project Atlas');
+      expect(rows[1]['task_name'], 'Analysis');
+      expect(rows[1]['billable_value'], 0);
+      expect(rows[2]['project_name'], 'Project Bravo');
+      expect(rows[2]['task_name'], 'Design');
+      expect(rows[3]['project_name'], 'Project Zephyr');
+      expect(rows[3]['task_name'], 'Support');
+    },
+  );
 
   test(
     'getWeekPageData falls back to start and end times for legacy rows',
@@ -1115,6 +1118,149 @@ void main() {
       );
     },
   );
+
+  test(
+    'getSetupAndSummaryPageData builds the six month billability summary with running averages',
+    () async {
+      final definitions = await _loadRequiredDayDefinitions(helper);
+      final ids = await _createProjectAndTask(
+        helper,
+        definitions,
+        projectName: 'Project Atlas',
+        taskName: 'Analysis',
+      );
+
+      await helper.saveDayEntry(
+        date: DateTime(2025, 12, 3),
+        projectId: ids.projectId,
+        taskId: ids.taskId,
+        startMinutes: 9 * 60,
+        endMinutes: 11 * 60,
+        billableValue: 1,
+      );
+      await helper.saveDayEntry(
+        date: DateTime(2026, 1, 12),
+        projectId: ids.projectId,
+        taskId: ids.taskId,
+        startMinutes: 9 * 60,
+        endMinutes: 10 * 60 + 30,
+        billableValue: 0,
+      );
+      await helper.saveDayEntry(
+        date: DateTime(2026, 2, 5),
+        projectId: ids.projectId,
+        taskId: ids.taskId,
+        startMinutes: 13 * 60,
+        endMinutes: 16 * 60,
+        billableValue: 1,
+      );
+      await helper.saveDayEntry(
+        date: DateTime(2026, 3, 10),
+        projectId: ids.projectId,
+        taskId: ids.taskId,
+        startMinutes: 8 * 60,
+        endMinutes: 9 * 60,
+        billableValue: 0,
+      );
+      await helper.saveDayEntry(
+        date: DateTime(2026, 4, 2),
+        projectId: ids.projectId,
+        taskId: ids.taskId,
+        startMinutes: 9 * 60,
+        endMinutes: 11 * 60 + 30,
+        billableValue: 1,
+      );
+      await helper.saveDayEntry(
+        date: DateTime(2026, 4, 3),
+        projectId: ids.projectId,
+        taskId: ids.taskId,
+        startMinutes: 15 * 60,
+        endMinutes: 15 * 60 + 30,
+        billableValue: 0,
+      );
+
+      final pageData = await helper.getSetupAndSummaryPageData(
+        referenceDate: DateTime(2026, 4, 18),
+      );
+      final billabilitySummary =
+          pageData['billability_summary'] as Map<String, dynamic>? ?? const {};
+      final rows = List<Map<String, dynamic>>.from(
+        billabilitySummary['rows'] as List<dynamic>? ?? const [],
+      );
+
+      expect(billabilitySummary['month_labels'], [
+        'Nov',
+        'Dec',
+        'Jan',
+        'Feb',
+        'Mar',
+        'Apr',
+      ]);
+
+      final billableHoursRow = _billabilitySummaryRowFor(
+        rows,
+        key: 'billable_hours',
+      );
+      final nonBillableHoursRow = _billabilitySummaryRowFor(
+        rows,
+        key: 'non_billable_hours',
+      );
+      final totalHoursRow = _billabilitySummaryRowFor(
+        rows,
+        key: 'total_hours_worked',
+      );
+      final billabilityPercentageRow = _billabilitySummaryRowFor(
+        rows,
+        key: 'billability_percentage',
+      );
+
+      expect(billableHoursRow['monthly_values'], [
+        0.0,
+        2.0,
+        0.0,
+        3.0,
+        0.0,
+        2.5,
+      ]);
+      expect(nonBillableHoursRow['monthly_values'], [
+        0.0,
+        0.0,
+        1.5,
+        0.0,
+        1.0,
+        0.5,
+      ]);
+      expect(totalHoursRow['monthly_values'], [0.0, 2.0, 1.5, 3.0, 1.0, 3.0]);
+
+      final monthlyPercentages = List<double>.from(
+        billabilityPercentageRow['monthly_values'] as List<dynamic>? ??
+            const [],
+      );
+      expect(monthlyPercentages[0], 0.0);
+      expect(monthlyPercentages[1], 100.0);
+      expect(monthlyPercentages[2], 0.0);
+      expect(monthlyPercentages[3], 100.0);
+      expect(monthlyPercentages[4], 0.0);
+      expect(monthlyPercentages[5], closeTo(83.3333, 0.0001));
+
+      expect(
+        (billableHoursRow['average_value'] as num).toDouble(),
+        closeTo(1.25, 0.0001),
+      );
+      expect(
+        (nonBillableHoursRow['average_value'] as num).toDouble(),
+        closeTo(0.5, 0.0001),
+      );
+      expect(
+        (totalHoursRow['average_value'] as num).toDouble(),
+        closeTo(1.75, 0.0001),
+      );
+      expect(
+        (billabilityPercentageRow['average_value'] as num).toDouble(),
+        closeTo(71.4286, 0.0001),
+      );
+    },
+  );
 }
 
 Object? _valueForComponent(Map<String, dynamic> entity, String componentName) {
@@ -1266,6 +1412,13 @@ Map<String, dynamic> _setupSummaryRowFor(
   required String name,
 }) {
   return rows.singleWhere((row) => row['kind'] == kind && row['name'] == name);
+}
+
+Map<String, dynamic> _billabilitySummaryRowFor(
+  List<Map<String, dynamic>> rows, {
+  required String key,
+}) {
+  return rows.singleWhere((row) => row['key'] == key);
 }
 
 class _ProjectTaskIds {

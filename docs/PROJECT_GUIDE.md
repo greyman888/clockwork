@@ -94,6 +94,12 @@ Expected behavior:
 - Start and end times must be formatted consistently.
 - Keyboard tabbing between fields must be supported.
 - The page should support quick repeated entry rather than a heavy form flow.
+- The Project field on the new Day row should use an auto-suggest interaction.
+- Its suggestions should be limited to project names that start with the typed
+  prefix.
+- As the user types, the first matching project name should be auto-completed
+  into the field with the suggested remainder selected, so typing `a` can
+  become `Adore` and continuing with `d` refines the field to `Adore`.
 - On Windows startup, the default app window width should be wide enough to
   show the full Day row actions, including Save and Delete, with a small
   right-side margin and without horizontal clipping.
@@ -138,6 +144,7 @@ Week table columns:
 
 Expected behavior:
 
+- Week rows should be ordered by project name, then task name, then billability.
 - If both billable and non-billable time exist for the same project/task pair,
   render separate rows.
 - Non-zero Mon-Sun totals should be clickable links.
@@ -177,6 +184,29 @@ Expected behavior:
 - Task rows should show totals for that task across all recorded days.
 - The summary should include both billable and non-billable time.
 - Zero-total projects and tasks should still appear in the summary.
+- The existing right-hand summary table should be titled `Project Summary`.
+- A second readonly section titled `Billability Summary` should appear directly
+  underneath `Project Summary`.
+- The Billability Summary should show the last six calendar months, with the
+  current month in the rightmost month column.
+- The Billability Summary should have eight visible data columns:
+  `Title`, six three-letter month abbreviations, and `Running Average`.
+- The Billability Summary should use a separate header row above the four data
+  rows, and may use internal spacer columns if needed to stay consistent with
+  the shared table layout system.
+- The four data rows should be:
+  `Billable Hours`, `Non Billable Hours`, `Total Hours Worked`, and
+  `Billability %`.
+- The first three rows should display numeric hours to two decimal places.
+- The `Billability %` row should display percentages to one decimal place.
+- The `Running Average` values for the hour rows should be the average monthly
+  hours across the six months.
+- The `Running Average` value for `Billability %` should be total billable
+  hours divided by total worked hours across the full six-month period.
+- The Billability Summary table should stay visually aligned in overall width
+  with the Project Summary table by keeping the `Average` column compact, while
+  still showing the header and values without clipping.
+- All Billability Summary data should be read only.
 
 ## Navigation
 
@@ -254,15 +284,32 @@ Use this workflow by default for new Clockwork requirements:
 2. Update the appropriate file in `docs/` before implementing the change.
 3. Implement the requirement in code.
 4. Run targeted tests for the affected area and run `flutter analyze`.
-5. Launch `flutter run -d windows`, or hot reload/hot restart if the app is
-   already running, so the user can inspect the result.
+5. Launch `.\tool\run\start_windows_dev.ps1`, or hot reload/hot restart if the
+   tracked app session is already running, so the user can inspect the result.
 6. Report what changed in the docs, what was implemented, what was tested, and
    whether the app is ready for inspection.
 
 ### Windows Run Verification
 
-When running the app for inspection, prefer one tracked `flutter run -d
-windows` session instead of starting multiple copies.
+When running the app for inspection, prefer one tracked dev-run session instead
+of starting multiple copies.
+
+Use these commands:
+
+- Live app:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tool\run\start_windows_dev.ps1
+```
+
+- Preview app:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tool\run\start_windows_dev.ps1 -Preview
+```
+
+The runner script should replace any previous tracked Clockwork dev runner
+before launching the next one, so old shell windows do not accumulate.
 
 Treat the run as successful when one or both of these signals appear:
 

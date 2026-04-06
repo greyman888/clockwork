@@ -23,6 +23,39 @@ void main() {
           {'task_id': 12, 'duration_minutes': 60},
           {'task_id': 21, 'duration_minutes': 75},
         ],
+        billabilitySummary: const {
+          'month_labels': ['Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr'],
+          'rows': [
+            {
+              'key': 'billable_hours',
+              'label': 'Billable Hours',
+              'display': 'hours',
+              'monthly_values': [0.0, 1.5, 2.0, 0.0, 1.0, 2.5],
+              'average_value': 1.17,
+            },
+            {
+              'key': 'non_billable_hours',
+              'label': 'Non Billable Hours',
+              'display': 'hours',
+              'monthly_values': [0.0, 0.5, 0.0, 1.5, 1.0, 1.0],
+              'average_value': 0.67,
+            },
+            {
+              'key': 'total_hours_worked',
+              'label': 'Total Hours Worked',
+              'display': 'hours',
+              'monthly_values': [0.0, 2.0, 2.0, 1.5, 2.0, 3.5],
+              'average_value': 1.83,
+            },
+            {
+              'key': 'billability_percentage',
+              'label': 'Billability %',
+              'display': 'percentage',
+              'monthly_values': [0.0, 75.0, 100.0, 0.0, 50.0, 71.4],
+              'average_value': 63.6,
+            },
+          ],
+        },
       );
 
       await tester.binding.setSurfaceSize(const Size(1400, 1200));
@@ -45,6 +78,11 @@ void main() {
       expect(find.byKey(const Key('setupSummaryTaskList')), findsOneWidget);
       expect(find.byKey(const Key('setupSummaryTable')), findsOneWidget);
       expect(
+        find.byKey(const Key('setupBillabilitySummaryTable')),
+        findsOneWidget,
+      );
+      expect(find.text('Billability Summary'), findsOneWidget);
+      expect(
         find.descendant(
           of: find.byKey(const Key('setupSummaryTaskList')),
           matching: find.text('Project Atlas / Analysis'),
@@ -54,6 +92,10 @@ void main() {
       expect(find.text('Planning'), findsOneWidget);
       expect(find.text('2h 30m'), findsOneWidget);
       expect(find.text('1h 15m'), findsNWidgets(2));
+      expect(find.text('Nov'), findsOneWidget);
+      expect(find.text('Apr'), findsOneWidget);
+      expect(find.text('1.17'), findsOneWidget);
+      expect(find.text('63.6%'), findsOneWidget);
       expect(find.text('0m'), findsWidgets);
       expect(tester.takeException(), isNull);
     },
@@ -200,15 +242,20 @@ class _FakeSetupAndSummaryStore {
     required List<Map<String, dynamic>> projects,
     required List<Map<String, dynamic>> tasks,
     required List<Map<String, dynamic>> timeEntries,
+    Map<String, dynamic>? billabilitySummary,
   }) : _projects = _cloneMapList(projects),
        _tasks = _cloneMapList(tasks),
        _timeEntries = _cloneMapList(timeEntries),
+       _billabilitySummary = _cloneBillabilitySummary(
+         billabilitySummary ?? _emptyBillabilitySummary(),
+       ),
        _nextProjectId = _nextId(projects),
        _nextTaskId = _nextId(tasks);
 
   final List<Map<String, dynamic>> _projects;
   final List<Map<String, dynamic>> _tasks;
   final List<Map<String, dynamic>> _timeEntries;
+  final Map<String, dynamic> _billabilitySummary;
   int _nextProjectId;
   int _nextTaskId;
 
@@ -389,6 +436,7 @@ class _FakeSetupAndSummaryStore {
       'projects': sortedProjects,
       'tasks': decoratedTasks,
       'summary_rows': summaryRows,
+      'billability_summary': _cloneBillabilitySummary(_billabilitySummary),
     };
   }
 
@@ -406,4 +454,58 @@ class _FakeSetupAndSummaryStore {
 
 List<Map<String, dynamic>> _cloneMapList(List<Map<String, dynamic>> value) {
   return value.map((entry) => Map<String, dynamic>.from(entry)).toList();
+}
+
+Map<String, dynamic> _cloneBillabilitySummary(Map<String, dynamic> value) {
+  return {
+    'month_labels': List<String>.from(
+      value['month_labels'] as List<dynamic>? ?? const [],
+    ),
+    'rows': List<Map<String, dynamic>>.from(
+      (value['rows'] as List<dynamic>? ?? const []).map(
+        (row) => {
+          ...(row as Map<String, dynamic>),
+          'monthly_values': List<double>.from(
+            row['monthly_values'] as List<dynamic>? ?? const [],
+          ),
+        },
+      ),
+    ),
+  };
+}
+
+Map<String, dynamic> _emptyBillabilitySummary() {
+  return const {
+    'month_labels': ['Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr'],
+    'rows': [
+      {
+        'key': 'billable_hours',
+        'label': 'Billable Hours',
+        'display': 'hours',
+        'monthly_values': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        'average_value': 0.0,
+      },
+      {
+        'key': 'non_billable_hours',
+        'label': 'Non Billable Hours',
+        'display': 'hours',
+        'monthly_values': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        'average_value': 0.0,
+      },
+      {
+        'key': 'total_hours_worked',
+        'label': 'Total Hours Worked',
+        'display': 'hours',
+        'monthly_values': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        'average_value': 0.0,
+      },
+      {
+        'key': 'billability_percentage',
+        'label': 'Billability %',
+        'display': 'percentage',
+        'monthly_values': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        'average_value': 0.0,
+      },
+    ],
+  };
 }

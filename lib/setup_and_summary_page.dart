@@ -60,6 +60,15 @@ class _SetupAndSummaryPageState extends State<SetupAndSummaryPage> {
   static const double _summaryNameGap = 12;
   static const double _summaryTotalGap = 12;
   static const double _summaryTotalColumnWidth = 92;
+  static const double _billabilityTitleColumnWidth = 168;
+  static const double _billabilityGapWidth = 12;
+  static const double _billabilityMonthColumnWidth = 72;
+  static const double _billabilityAverageColumnWidth = 68;
+  static const double _billabilityTableWidth =
+      _billabilityTitleColumnWidth +
+      (_billabilityGapWidth * 7) +
+      (_billabilityMonthColumnWidth * 6) +
+      _billabilityAverageColumnWidth;
   static const Map<int, TableColumnWidth> _summaryTableColumnWidths =
       <int, TableColumnWidth>{
         0: FixedColumnWidth(_summaryKindColumnWidth),
@@ -68,6 +77,38 @@ class _SetupAndSummaryPageState extends State<SetupAndSummaryPage> {
         3: FixedColumnWidth(_summaryTotalGap),
         4: FixedColumnWidth(_summaryTotalColumnWidth),
       };
+  static const Map<int, TableColumnWidth> _billabilityTableColumnWidths =
+      <int, TableColumnWidth>{
+        0: FixedColumnWidth(_billabilityTitleColumnWidth),
+        1: FixedColumnWidth(_billabilityGapWidth),
+        2: FixedColumnWidth(_billabilityMonthColumnWidth),
+        3: FixedColumnWidth(_billabilityGapWidth),
+        4: FixedColumnWidth(_billabilityMonthColumnWidth),
+        5: FixedColumnWidth(_billabilityGapWidth),
+        6: FixedColumnWidth(_billabilityMonthColumnWidth),
+        7: FixedColumnWidth(_billabilityGapWidth),
+        8: FixedColumnWidth(_billabilityMonthColumnWidth),
+        9: FixedColumnWidth(_billabilityGapWidth),
+        10: FixedColumnWidth(_billabilityMonthColumnWidth),
+        11: FixedColumnWidth(_billabilityGapWidth),
+        12: FixedColumnWidth(_billabilityMonthColumnWidth),
+        13: FixedColumnWidth(_billabilityGapWidth),
+        14: FixedColumnWidth(_billabilityAverageColumnWidth),
+      };
+  static const List<String> _monthAbbreviations = <String>[
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
 
   final TextEditingController _projectNameController = TextEditingController();
   final TextEditingController _taskNameController = TextEditingController();
@@ -75,6 +116,8 @@ class _SetupAndSummaryPageState extends State<SetupAndSummaryPage> {
   List<Map<String, dynamic>> _projects = const [];
   List<Map<String, dynamic>> _tasks = const [];
   List<Map<String, dynamic>> _summaryRows = const [];
+  List<String> _billabilityMonthLabels = const [];
+  List<Map<String, dynamic>> _billabilityRows = const [];
   int? _selectedProjectId;
   int? _selectedTaskId;
   int? _taskProjectId;
@@ -88,6 +131,71 @@ class _SetupAndSummaryPageState extends State<SetupAndSummaryPage> {
   bool get _isEditingProject => _selectedProjectId != null;
 
   bool get _isEditingTask => _selectedTaskId != null;
+
+  Map<String, dynamic> _normalizeBillabilitySummary(dynamic rawSummary) {
+    final summary = rawSummary is Map<String, dynamic>
+        ? rawSummary
+        : _buildEmptyBillabilitySummary(DateTime.now());
+    return {
+      'month_labels': List<String>.from(
+        summary['month_labels'] as List<dynamic>? ??
+            _defaultBillabilityMonthLabels(DateTime.now()),
+      ),
+      'rows': List<Map<String, dynamic>>.from(
+        summary['rows'] as List<dynamic>? ?? _buildEmptyBillabilityRows(),
+      ),
+    };
+  }
+
+  List<String> _defaultBillabilityMonthLabels(DateTime referenceDate) {
+    return List<String>.generate(6, (index) {
+      final month = DateTime(
+        referenceDate.year,
+        referenceDate.month - 5 + index,
+      );
+      return _monthAbbreviations[month.month - 1];
+    }, growable: false);
+  }
+
+  List<Map<String, dynamic>> _buildEmptyBillabilityRows() {
+    return const [
+      {
+        'key': 'billable_hours',
+        'label': 'Billable Hours',
+        'display': 'hours',
+        'monthly_values': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        'average_value': 0.0,
+      },
+      {
+        'key': 'non_billable_hours',
+        'label': 'Non Billable Hours',
+        'display': 'hours',
+        'monthly_values': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        'average_value': 0.0,
+      },
+      {
+        'key': 'total_hours_worked',
+        'label': 'Total Hours Worked',
+        'display': 'hours',
+        'monthly_values': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        'average_value': 0.0,
+      },
+      {
+        'key': 'billability_percentage',
+        'label': 'Billability %',
+        'display': 'percentage',
+        'monthly_values': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        'average_value': 0.0,
+      },
+    ];
+  }
+
+  Map<String, dynamic> _buildEmptyBillabilitySummary(DateTime referenceDate) {
+    return {
+      'month_labels': _defaultBillabilityMonthLabels(referenceDate),
+      'rows': _buildEmptyBillabilityRows(),
+    };
+  }
 
   List<Map<String, dynamic>> get _visibleTasks {
     final projectId = _taskProjectId;
@@ -132,6 +240,9 @@ class _SetupAndSummaryPageState extends State<SetupAndSummaryPage> {
       final summaryRows = List<Map<String, dynamic>>.from(
         pageData['summary_rows'] as List<dynamic>? ?? const [],
       );
+      final billabilitySummary = _normalizeBillabilitySummary(
+        pageData['billability_summary'],
+      );
 
       if (!mounted) {
         return;
@@ -141,6 +252,12 @@ class _SetupAndSummaryPageState extends State<SetupAndSummaryPage> {
         _projects = projects;
         _tasks = tasks;
         _summaryRows = summaryRows;
+        _billabilityMonthLabels = List<String>.from(
+          billabilitySummary['month_labels'] as List<dynamic>? ?? const [],
+        );
+        _billabilityRows = List<Map<String, dynamic>>.from(
+          billabilitySummary['rows'] as List<dynamic>? ?? const [],
+        );
         _restoreSelectionState(
           preferredProjectId: selectProjectId,
           preferredTaskId: selectTaskId,
@@ -155,6 +272,8 @@ class _SetupAndSummaryPageState extends State<SetupAndSummaryPage> {
         _projects = const [];
         _tasks = const [];
         _summaryRows = const [];
+        _billabilityMonthLabels = const [];
+        _billabilityRows = const [];
         _selectedProjectId = null;
         _selectedTaskId = null;
         _taskProjectId = null;
@@ -538,7 +657,13 @@ class _SetupAndSummaryPageState extends State<SetupAndSummaryPage> {
                       child: SizedBox(
                         key: const Key('setupAndSummarySummaryColumn'),
                         width: double.infinity,
-                        child: _buildSummaryCard(context),
+                        child: Column(
+                          children: [
+                            _buildProjectSummaryCard(context),
+                            const SizedBox(height: _panelGap),
+                            _buildBillabilitySummaryCard(context),
+                          ],
+                        ),
                       ),
                     ),
                   ],
@@ -750,7 +875,7 @@ class _SetupAndSummaryPageState extends State<SetupAndSummaryPage> {
     );
   }
 
-  Widget _buildSummaryCard(BuildContext context) {
+  Widget _buildProjectSummaryCard(BuildContext context) {
     final theme = FluentTheme.of(context);
 
     return Card(
@@ -778,6 +903,8 @@ class _SetupAndSummaryPageState extends State<SetupAndSummaryPage> {
             )
           else
             Container(
+              key: const Key('setupSummaryPanel'),
+              width: double.infinity,
               decoration: BoxDecoration(
                 border: Border.all(color: theme.inactiveColor),
                 borderRadius: BorderRadius.circular(8),
@@ -793,6 +920,69 @@ class _SetupAndSummaryPageState extends State<SetupAndSummaryPage> {
                     (row) => _buildSummaryDataRow(context, row),
                   ),
                 ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBillabilitySummaryCard(BuildContext context) {
+    final theme = FluentTheme.of(context);
+    final billabilitySummary = _normalizeBillabilitySummary({
+      'month_labels': _billabilityMonthLabels,
+      'rows': _billabilityRows,
+    });
+    final monthLabels = List<String>.from(
+      billabilitySummary['month_labels'] as List<dynamic>? ?? const [],
+    );
+    final rows = List<Map<String, dynamic>>.from(
+      billabilitySummary['rows'] as List<dynamic>? ?? const [],
+    );
+
+    return Card(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Billability Summary', style: theme.typography.subtitle),
+          const SizedBox(height: 6),
+          Text(
+            'Readonly billable and non billable totals for the last six calendar months, plus running averages.',
+            style: theme.typography.body,
+          ),
+          const SizedBox(height: 16),
+          if (_isLoading && _billabilityRows.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Center(child: ProgressRing()),
+            )
+          else if (_loadError != null)
+            _buildMessagePanel(context, _loadError!)
+          else
+            Container(
+              key: const Key('setupBillabilitySummaryPanel'),
+              width: double.infinity,
+              decoration: BoxDecoration(
+                border: Border.all(color: theme.inactiveColor),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              padding: const EdgeInsets.all(16),
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: SizedBox(
+                  width: _billabilityTableWidth,
+                  child: Table(
+                    key: const Key('setupBillabilitySummaryTable'),
+                    columnWidths: _billabilityTableColumnWidths,
+                    defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+                    children: [
+                      _buildBillabilityHeaderRow(context, monthLabels),
+                      ...rows.map(
+                        (row) => _buildBillabilityDataRow(context, row),
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
         ],
@@ -921,6 +1111,124 @@ class _SetupAndSummaryPageState extends State<SetupAndSummaryPage> {
     );
   }
 
+  TableRow _buildBillabilityHeaderRow(
+    BuildContext context,
+    List<String> monthLabels,
+  ) {
+    final theme = FluentTheme.of(context);
+    final effectiveMonthLabels = monthLabels.length == 6
+        ? monthLabels
+        : _defaultBillabilityMonthLabels(DateTime.now());
+
+    return TableRow(
+      children: [
+        _summaryCell(
+          child: Text('Title', style: theme.typography.bodyStrong),
+          bottomPadding: 10,
+        ),
+        _billabilityGapCell(),
+        ..._buildBillabilityHeaderCells(theme, effectiveMonthLabels),
+        _summaryCell(
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: Text('Average', style: theme.typography.bodyStrong),
+          ),
+          bottomPadding: 10,
+        ),
+      ],
+    );
+  }
+
+  List<Widget> _buildBillabilityHeaderCells(
+    FluentThemeData theme,
+    List<String> monthLabels,
+  ) {
+    final cells = <Widget>[];
+    for (var index = 0; index < monthLabels.length; index += 1) {
+      cells.add(
+        _summaryCell(
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: Text(monthLabels[index], style: theme.typography.bodyStrong),
+          ),
+          bottomPadding: 10,
+        ),
+      );
+      cells.add(_billabilityGapCell());
+    }
+    return cells;
+  }
+
+  TableRow _buildBillabilityDataRow(
+    BuildContext context,
+    Map<String, dynamic> row,
+  ) {
+    final theme = FluentTheme.of(context);
+    final monthlyValues = (row['monthly_values'] as List<dynamic>? ?? const [])
+        .map((value) => (value as num?)?.toDouble() ?? 0.0)
+        .toList(growable: false);
+    final display = row['display'] as String? ?? 'hours';
+    final averageValue = (row['average_value'] as num?)?.toDouble() ?? 0.0;
+
+    return TableRow(
+      children: [
+        _summaryCell(
+          child: Text(
+            row['label'] as String? ?? '',
+            style: theme.typography.bodyStrong,
+          ),
+        ),
+        _billabilityGapCell(),
+        ..._buildBillabilityValueCells(theme, monthlyValues, display: display),
+        _summaryCell(
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: Text(
+              _formatBillabilityValue(averageValue, display: display),
+              style: theme.typography.body,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  List<Widget> _buildBillabilityValueCells(
+    FluentThemeData theme,
+    List<double> monthlyValues, {
+    required String display,
+  }) {
+    final values = List<double>.from(monthlyValues);
+    while (values.length < 6) {
+      values.add(0.0);
+    }
+
+    final cells = <Widget>[];
+    for (var index = 0; index < 6; index += 1) {
+      cells.add(
+        _summaryCell(
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: Text(
+              _formatBillabilityValue(values[index], display: display),
+              style: theme.typography.body,
+            ),
+          ),
+        ),
+      );
+      cells.add(_billabilityGapCell());
+    }
+    return cells;
+  }
+
+  String _formatBillabilityValue(double value, {required String display}) {
+    if (display == 'percentage') {
+      return '${value.toStringAsFixed(1)}%';
+    }
+
+    return value.toStringAsFixed(2);
+  }
+
   Widget _buildMessagePanel(BuildContext context, String message) {
     return Container(
       width: double.infinity,
@@ -953,4 +1261,8 @@ Widget _summaryCell({required Widget child, double bottomPadding = 12}) {
     padding: EdgeInsets.only(bottom: bottomPadding),
     child: child,
   );
+}
+
+Widget _billabilityGapCell() {
+  return const SizedBox.shrink();
 }

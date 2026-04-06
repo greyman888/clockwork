@@ -129,12 +129,22 @@ void main() {
           final summaryColumnRect = tester.getRect(
             find.byKey(const Key('setupAndSummarySummaryColumn')),
           );
+          final projectSummaryPanelRect = tester.getRect(
+            find.byKey(const Key('setupSummaryPanel')),
+          );
+          final billabilitySummaryPanelRect = tester.getRect(
+            find.byKey(const Key('setupBillabilitySummaryPanel')),
+          );
 
           expect(
             summaryColumnRect.left - setupColumnRect.right,
             moreOrLessEquals(16, epsilon: 0.1),
           );
           expect(setupColumnRect.width, moreOrLessEquals(400, epsilon: 0.1));
+          expect(
+            billabilitySummaryPanelRect.width,
+            moreOrLessEquals(projectSummaryPanelRect.width, epsilon: 0.1),
+          );
         }
       },
     );
@@ -456,5 +466,38 @@ Map<String, dynamic> _buildSetupSummaryLayoutData() {
         'total_minutes': 0,
       },
     ],
+    'billability_summary': const {
+      'month_labels': ['Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr'],
+      'rows': [
+        {
+          'key': 'billable_hours',
+          'label': 'Billable Hours',
+          'display': 'hours',
+          'monthly_values': [0.0, 1.0, 1.5, 1.0, 0.5, 2.75],
+          'average_value': 1.13,
+        },
+        {
+          'key': 'non_billable_hours',
+          'label': 'Non Billable Hours',
+          'display': 'hours',
+          'monthly_values': [0.0, 0.5, 0.25, 1.0, 0.5, 1.0],
+          'average_value': 0.54,
+        },
+        {
+          'key': 'total_hours_worked',
+          'label': 'Total Hours Worked',
+          'display': 'hours',
+          'monthly_values': [0.0, 1.5, 1.75, 2.0, 1.0, 3.75],
+          'average_value': 1.33,
+        },
+        {
+          'key': 'billability_percentage',
+          'label': 'Billability %',
+          'display': 'percentage',
+          'monthly_values': [0.0, 66.7, 85.7, 50.0, 50.0, 73.3],
+          'average_value': 70.0,
+        },
+      ],
+    },
   };
 }

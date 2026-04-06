@@ -1114,7 +1114,9 @@ class DbHelper {
     };
   }
 
-  Future<Map<String, dynamic>> getSetupAndSummaryPageData() async {
+  Future<Map<String, dynamic>> getSetupAndSummaryPageData({
+    DateTime? referenceDate,
+  }) async {
     final sourceData = await _loadClockworkTimeEntrySourceData();
     final taskTotals = <int, int>{};
 
@@ -1196,7 +1198,160 @@ class DbHelper {
       'projects': sourceData.projects,
       'tasks': sourceData.tasks,
       'summary_rows': summaryRows,
+      'billability_summary': _buildBillabilitySummary(
+        sourceData.entries,
+        referenceDate: referenceDate ?? DateTime.now(),
+      ),
     };
+  }
+
+  Map<String, dynamic> _buildBillabilitySummary(
+    List<Map<String, dynamic>> entries, {
+    required DateTime referenceDate,
+  }) {
+    final monthStarts = _setupSummaryMonthStarts(referenceDate);
+    final monthIndexByKey = <int, int>{
+      for (var index = 0; index < monthStarts.length; index += 1)
+        _setupSummaryMonthKey(monthStarts[index]): index,
+    };
+    final billableMinutes = List<int>.filled(monthStarts.length, 0);
+    final nonBillableMinutes = List<int>.filled(monthStarts.length, 0);
+    final totalMinutes = List<int>.filled(monthStarts.length, 0);
+
+    for (final entry in entries) {
+      final dateValue = entry['date'] as int?;
+      final durationMinutes = entry['duration_minutes'] as int?;
+      if (dateValue == null ||
+          durationMinutes == null ||
+          durationMinutes <= 0) {
+        continue;
+      }
+
+      final entryDate = DateTime.fromMillisecondsSinceEpoch(dateValue);
+      final monthIndex =
+          monthIndexByKey[_setupSummaryMonthKey(
+            DateTime(entryDate.year, entryDate.month),
+          )];
+      if (monthIndex == null) {
+        continue;
+      }
+
+      final billableValue = entry['billable_value'] as int? ?? 0;
+      if (billableValue == 1) {
+        billableMinutes[monthIndex] += durationMinutes;
+      } else {
+        nonBillableMinutes[monthIndex] += durationMinutes;
+      }
+      totalMinutes[monthIndex] += durationMinutes;
+    }
+
+    List<double> toHours(List<int> minutes) {
+      return minutes.map((value) => value / 60.0).toList(growable: false);
+    }
+
+    final billableHours = toHours(billableMinutes);
+    final nonBillableHours = toHours(nonBillableMinutes);
+    final totalHours = toHours(totalMinutes);
+    final billabilityPercentages = List<double>.generate(monthStarts.length, (
+      index,
+    ) {
+      final monthlyTotalMinutes = totalMinutes[index];
+      if (monthlyTotalMinutes <= 0) {
+        return 0;
+      }
+
+      return (billableMinutes[index] / monthlyTotalMinutes) * 100;
+    }, growable: false);
+
+    double averageHours(List<int> minutes) {
+      if (minutes.isEmpty) {
+        return 0;
+      }
+
+      return (minutes.fold<int>(0, (sum, value) => sum + value) / 60.0) /
+          minutes.length;
+    }
+
+    final totalBillableMinutes = billableMinutes.fold<int>(
+      0,
+      (sum, value) => sum + value,
+    );
+    final totalWorkedMinutes = totalMinutes.fold<int>(
+      0,
+      (sum, value) => sum + value,
+    );
+    final runningBillabilityPercentage = totalWorkedMinutes == 0
+        ? 0.0
+        : (totalBillableMinutes / totalWorkedMinutes) * 100;
+
+    return {
+      'month_labels': monthStarts
+          .map(_setupSummaryMonthLabel)
+          .toList(growable: false),
+      'rows': [
+        {
+          'key': 'billable_hours',
+          'label': 'Billable Hours',
+          'display': 'hours',
+          'monthly_values': billableHours,
+          'average_value': averageHours(billableMinutes),
+        },
+        {
+          'key': 'non_billable_hours',
+          'label': 'Non Billable Hours',
+          'display': 'hours',
+          'monthly_values': nonBillableHours,
+          'average_value': averageHours(nonBillableMinutes),
+        },
+        {
+          'key': 'total_hours_worked',
+          'label': 'Total Hours Worked',
+          'display': 'hours',
+          'monthly_values': totalHours,
+          'average_value': averageHours(totalMinutes),
+        },
+        {
+          'key': 'billability_percentage',
+          'label': 'Billability %',
+          'display': 'percentage',
+          'monthly_values': billabilityPercentages,
+          'average_value': runningBillabilityPercentage,
+        },
+      ],
+    };
+  }
+
+  List<DateTime> _setupSummaryMonthStarts(DateTime referenceDate) {
+    final currentMonthStart = DateTime(referenceDate.year, referenceDate.month);
+    return List<DateTime>.generate(
+      6,
+      (index) =>
+          DateTime(currentMonthStart.year, currentMonthStart.month - 5 + index),
+      growable: false,
+    );
+  }
+
+  String _setupSummaryMonthLabel(DateTime monthStart) {
+    const monthLabels = <String>[
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+
+    return monthLabels[monthStart.month - 1];
+  }
+
+  int _setupSummaryMonthKey(DateTime monthStart) {
+    return (monthStart.year * 100) + monthStart.month;
   }
 
   Future<int> saveProject({required String name, int? projectId}) async {
@@ -1622,13 +1777,6 @@ class DbHelper {
   }
 
   int _compareWeekRows(Map<String, dynamic> left, Map<String, dynamic> right) {
-    final totalCompare = (right['total_minutes'] as int).compareTo(
-      left['total_minutes'] as int,
-    );
-    if (totalCompare != 0) {
-      return totalCompare;
-    }
-
     final projectCompare = (left['project_name'] as String)
         .toLowerCase()
         .compareTo((right['project_name'] as String).toLowerCase());

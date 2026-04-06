@@ -920,15 +920,20 @@ class _PreviewSetupAndSummaryStore {
     required List<Map<String, dynamic>> projects,
     required List<Map<String, dynamic>> tasks,
     required List<Map<String, dynamic>> timeEntries,
+    Map<String, dynamic>? billabilitySummary,
   }) : _projects = _cloneMapList(projects),
        _tasks = _cloneMapList(tasks),
        _timeEntries = _cloneMapList(timeEntries),
+       _billabilitySummary = _clonePreviewBillabilitySummary(
+         billabilitySummary ?? _emptyPreviewBillabilitySummary(),
+       ),
        _nextProjectId = _nextEntityId(projects),
        _nextTaskId = _nextEntityId(tasks);
 
   final List<Map<String, dynamic>> _projects;
   final List<Map<String, dynamic>> _tasks;
   final List<Map<String, dynamic>> _timeEntries;
+  final Map<String, dynamic> _billabilitySummary;
   int _nextProjectId;
   int _nextTaskId;
 
@@ -1113,6 +1118,9 @@ class _PreviewSetupAndSummaryStore {
       'projects': projects,
       'tasks': decoratedTasks,
       'summary_rows': summaryRows,
+      'billability_summary': _clonePreviewBillabilitySummary(
+        _billabilitySummary,
+      ),
     };
   }
 
@@ -1133,6 +1141,7 @@ _PreviewSetupAndSummaryStore _buildEmptySetupAndSummaryStore() {
     projects: const [],
     tasks: const [],
     timeEntries: const [],
+    billabilitySummary: _emptyPreviewBillabilitySummary(),
   );
 }
 
@@ -1154,6 +1163,39 @@ _PreviewSetupAndSummaryStore _buildPopulatedSetupAndSummaryStore() {
       {'task_id': 12, 'duration_minutes': 45},
       {'task_id': 21, 'duration_minutes': 105},
     ],
+    billabilitySummary: const {
+      'month_labels': ['Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr'],
+      'rows': [
+        {
+          'key': 'billable_hours',
+          'label': 'Billable Hours',
+          'display': 'hours',
+          'monthly_values': [0.0, 1.50, 2.00, 0.75, 1.00, 4.25],
+          'average_value': 1.58,
+        },
+        {
+          'key': 'non_billable_hours',
+          'label': 'Non Billable Hours',
+          'display': 'hours',
+          'monthly_values': [0.0, 0.50, 0.25, 1.25, 0.75, 1.75],
+          'average_value': 0.75,
+        },
+        {
+          'key': 'total_hours_worked',
+          'label': 'Total Hours Worked',
+          'display': 'hours',
+          'monthly_values': [0.0, 2.00, 2.25, 2.00, 1.75, 6.00],
+          'average_value': 2.33,
+        },
+        {
+          'key': 'billability_percentage',
+          'label': 'Billability %',
+          'display': 'percentage',
+          'monthly_values': [0.0, 75.0, 88.9, 37.5, 57.1, 70.8],
+          'average_value': 67.9,
+        },
+      ],
+    },
   );
 }
 
@@ -1185,6 +1227,39 @@ _PreviewSetupAndSummaryStore _buildLongNameSetupAndSummaryStore() {
       {'task_id': 421, 'duration_minutes': 135},
       {'task_id': 422, 'duration_minutes': 0},
     ],
+    billabilitySummary: const {
+      'month_labels': ['Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr'],
+      'rows': [
+        {
+          'key': 'billable_hours',
+          'label': 'Billable Hours',
+          'display': 'hours',
+          'monthly_values': [1.25, 0.75, 2.50, 1.50, 0.50, 2.25],
+          'average_value': 1.46,
+        },
+        {
+          'key': 'non_billable_hours',
+          'label': 'Non Billable Hours',
+          'display': 'hours',
+          'monthly_values': [0.25, 1.00, 0.75, 1.25, 0.50, 1.00],
+          'average_value': 0.79,
+        },
+        {
+          'key': 'total_hours_worked',
+          'label': 'Total Hours Worked',
+          'display': 'hours',
+          'monthly_values': [1.50, 1.75, 3.25, 2.75, 1.00, 3.25],
+          'average_value': 2.25,
+        },
+        {
+          'key': 'billability_percentage',
+          'label': 'Billability %',
+          'display': 'percentage',
+          'monthly_values': [83.3, 42.9, 76.9, 54.5, 50.0, 69.2],
+          'average_value': 64.8,
+        },
+      ],
+    },
   );
 }
 
@@ -1194,6 +1269,62 @@ List<Map<String, dynamic>> _basePreviewProjects() {
     {'id': 2, 'name': 'Koorong'},
     {'id': 3, 'name': 'Internal'},
   ];
+}
+
+Map<String, dynamic> _emptyPreviewBillabilitySummary() {
+  return const {
+    'month_labels': ['Nov', 'Dec', 'Jan', 'Feb', 'Mar', 'Apr'],
+    'rows': [
+      {
+        'key': 'billable_hours',
+        'label': 'Billable Hours',
+        'display': 'hours',
+        'monthly_values': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        'average_value': 0.0,
+      },
+      {
+        'key': 'non_billable_hours',
+        'label': 'Non Billable Hours',
+        'display': 'hours',
+        'monthly_values': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        'average_value': 0.0,
+      },
+      {
+        'key': 'total_hours_worked',
+        'label': 'Total Hours Worked',
+        'display': 'hours',
+        'monthly_values': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        'average_value': 0.0,
+      },
+      {
+        'key': 'billability_percentage',
+        'label': 'Billability %',
+        'display': 'percentage',
+        'monthly_values': [0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        'average_value': 0.0,
+      },
+    ],
+  };
+}
+
+Map<String, dynamic> _clonePreviewBillabilitySummary(
+  Map<String, dynamic> value,
+) {
+  return {
+    'month_labels': List<String>.from(
+      value['month_labels'] as List<dynamic>? ?? const [],
+    ),
+    'rows': List<Map<String, dynamic>>.from(
+      (value['rows'] as List<dynamic>? ?? const []).map(
+        (row) => {
+          ...(row as Map<String, dynamic>),
+          'monthly_values': List<double>.from(
+            row['monthly_values'] as List<dynamic>? ?? const [],
+          ),
+        },
+      ),
+    ),
+  };
 }
 
 List<Map<String, dynamic>> _basePreviewTasks() {

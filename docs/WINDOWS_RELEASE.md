@@ -52,7 +52,7 @@ targeted UI checks:
 - Preview run:
 
 ```powershell
-flutter run -d windows --dart-define=CLOCKWORK_UI_PREVIEW=true
+powershell -ExecutionPolicy Bypass -File .\tool\run\start_windows_dev.ps1 -Preview
 ```
 
 - Layout/widget checks:

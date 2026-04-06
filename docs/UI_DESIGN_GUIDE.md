@@ -43,6 +43,8 @@ the main product, architecture, and application requirements context.
   named column constants or combined spans.
 - Prefer fixed-width `Table` layouts with explicit spacer columns for structured
   data entry and summary views.
+- Separate header rows are preferred for summary tables when column labels need
+  to stay visually aligned across multiple readonly rows.
 - Keep the top control row and the table body on the same overall width when
   they are visually linked.
 - Horizontal scrolling is acceptable on narrower desktop widths if alignment is
@@ -82,7 +84,7 @@ Check these items before considering a page visually complete:
 Run the preview pane on Windows:
 
 ```powershell
-flutter run -d windows --dart-define=CLOCKWORK_UI_PREVIEW=true
+powershell -ExecutionPolicy Bypass -File .\tool\run\start_windows_dev.ps1 -Preview
 ```
 
 Use the preview pane to review deterministic scenarios for:
@@ -91,6 +93,8 @@ Use the preview pane to review deterministic scenarios for:
   boundary handling, and week-to-day drill-in.
 - Week: empty week, mixed billable rows, long labels, notes popup, and weekday
   navigation links.
+- Setup and Summary: empty state, populated project/task data, long names, and
+  readonly summary sections with stable month-based values.
 
 Use the `Reset Scenario` action in the preview pane whenever you want to return
 to the original fixture state.
@@ -108,7 +112,7 @@ powershell -ExecutionPolicy Bypass -File .\tool\test\run_layout_checks.ps1
 4. Run a live Windows smoke pass:
 
 ```powershell
-flutter run -d windows
+powershell -ExecutionPolicy Bypass -File .\tool\run\start_windows_dev.ps1
 ```
 
 The live smoke pass confirms the layout still behaves correctly with the real
