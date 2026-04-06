@@ -21,9 +21,11 @@ if ($pubspecContent -notmatch '(?m)^version:\s*([^\s#]+)\s*$') {
 
 $appVersion = $Matches[1]
 if ($appVersion -match '^(\d+)\.(\d+)\.(\d+)\+(\d+)$') {
+    $installerArtifactVersion = "$($Matches[1]).$($Matches[2]).$($Matches[3])"
     $versionInfoVersion = "$($Matches[1]).$($Matches[2]).$($Matches[3]).$($Matches[4])"
 }
 elseif ($appVersion -match '^(\d+)\.(\d+)\.(\d+)$') {
+    $installerArtifactVersion = "$($Matches[1]).$($Matches[2]).$($Matches[3])"
     $versionInfoVersion = "$($Matches[1]).$($Matches[2]).$($Matches[3]).0"
 }
 else {
@@ -71,6 +73,7 @@ New-Item -ItemType Directory -Force -Path $installerOutputDirectory | Out-Null
 
 $isccArguments = @(
     "/DAppVersion=$appVersion"
+    "/DInstallerArtifactVersion=$installerArtifactVersion"
     "/DVersionInfoVersion=$versionInfoVersion"
     "/DProductName=$($config.ProductName)"
     "/DPublisher=$($config.Publisher)"
@@ -91,7 +94,7 @@ if ($LASTEXITCODE -ne 0) {
     throw 'Inno Setup compilation failed.'
 }
 
-$installerArtifact = Join-Path $installerOutputDirectory "$($config.InstallerArtifactBaseName)-$appVersion.exe"
+$installerArtifact = Join-Path $installerOutputDirectory "$($config.InstallerArtifactBaseName)-$installerArtifactVersion.exe"
 if (-not (Test-Path -Path $installerArtifact -PathType Leaf)) {
     throw "Expected installer artifact was not created at $installerArtifact."
 }

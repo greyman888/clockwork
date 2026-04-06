@@ -10,6 +10,8 @@ For the main project, product, and architectural context, start with
 - Product name: `Clockwork`
 - Publisher: `Clockwork Software`
 - Version source: `pubspec.yaml`
+- Installer filenames use only the semantic version portion of `pubspec.yaml`
+  and omit any Flutter `+build` suffix.
 - Windows install directory: `%LocalAppData%\Programs\Clockwork`
 - Windows data directory: `%APPDATA%\Clockwork Software\Clockwork`
 - Windows development data directory: `%APPDATA%\Clockwork Software\Clockwork Dev`
@@ -25,6 +27,9 @@ For the main project, product, and architectural context, start with
 
 From the repo root:
 
+1. Bump the app version in `pubspec.yaml` to the target release version.
+2. Run:
+
 ```powershell
 .\tool\release\build_windows_installer.ps1
 ```
@@ -35,6 +40,11 @@ What the script does:
 2. Runs `flutter build windows --release`
 3. Packages `build\windows\x64\runner\Release`
 4. Produces `build\installer\ClockworkSetup-<version>.exe`
+
+Examples:
+
+- `version: 1.0.1+1` produces `ClockworkSetup-1.0.1.exe`
+- `version: 1.0.2` produces `ClockworkSetup-1.0.2.exe`
 
 Optional flags:
 

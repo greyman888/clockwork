@@ -16,6 +16,9 @@
 #ifndef InstallerArtifactBaseName
   #error InstallerArtifactBaseName define is required.
 #endif
+#ifndef InstallerArtifactVersion
+  #error InstallerArtifactVersion define is required.
+#endif
 #ifndef InnoAppId
   #error InnoAppId define is required.
 #endif
@@ -45,7 +48,7 @@ DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 OutputDir={#OutputDir}
-OutputBaseFilename={#InstallerArtifactBaseName}-{#AppVersion}
+OutputBaseFilename={#InstallerArtifactBaseName}-{#InstallerArtifactVersion}
 SetupIconFile=..\runner\resources\app_icon.ico
 UninstallDisplayIcon={app}\{#ExecutableName}
 ArchitecturesAllowed=x64compatible
