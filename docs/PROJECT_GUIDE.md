@@ -75,7 +75,8 @@ Use these storage rules:
 
 ## Day Page
 
-The Day page is the first data-entry screen and should default to today.
+The Day page is the first data-entry screen, should default to today, and
+should be the page the application opens on at startup.
 
 Each row is a single-line entry form containing:
 
@@ -93,6 +94,9 @@ Expected behavior:
 - Start and end times must be formatted consistently.
 - Keyboard tabbing between fields must be supported.
 - The page should support quick repeated entry rather than a heavy form flow.
+- On Windows startup, the default app window width should be wide enough to
+  show the full Day row actions, including Save and Delete, with a small
+  right-side margin and without horizontal clipping.
 
 ## Day Validation Feedback
 
@@ -210,6 +214,47 @@ live database should be updated in the same step.
 - Remove redundant code when possible.
 - Keep the code easy for both human and AI agents to understand.
 - Prefer readable statements over compressed cleverness.
+
+## Standard Change Cycle
+
+Use this workflow by default for new Clockwork requirements:
+
+1. The user describes the requirement in chat.
+2. Update the appropriate file in `docs/` before implementing the change.
+3. Implement the requirement in code.
+4. Run targeted tests for the affected area and run `flutter analyze`.
+5. Launch `flutter run -d windows`, or hot reload/hot restart if the app is
+   already running, so the user can inspect the result.
+6. Report what changed in the docs, what was implemented, what was tested, and
+   whether the app is ready for inspection.
+
+### Windows Run Verification
+
+When running the app for inspection, prefer one tracked `flutter run -d
+windows` session instead of starting multiple copies.
+
+Treat the run as successful when one or both of these signals appear:
+
+- The `flutter run` output reaches the normal startup lines such as `Built
+  ...\Clockwork.exe`, `Syncing files to device Windows...`, and the `Dart VM
+  Service` URL.
+- A live `Clockwork.exe` process is visible in the Windows process list.
+
+If a tracked launch is useful, capture the output to
+`tool/run/flutter_run_windows.log` so the startup state can be checked without
+guessing from terminal windows alone.
+
+If the app is already running in a tracked session, prefer hot reload with `r`
+or hot restart with `R` instead of launching a second instance.
+
+Route requirement updates to these docs:
+
+- Use `PROJECT_GUIDE.md` for product behavior, architecture, data definitions,
+  workflow, and testing expectations.
+- Use `UI_DESIGN_GUIDE.md` for layout rules, preview scenarios, and visual
+  verification requirements.
+- Use `WINDOWS_RELEASE.md` for packaging, installer, and release workflow
+  changes.
 
 ## Testing Guidance
 
