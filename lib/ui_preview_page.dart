@@ -635,6 +635,7 @@ class _PreviewDayStore {
       'projects': _cloneMapList(_projects),
       'tasks': _cloneMapList(_tasks),
       'entries': _cloneMapList(_entriesByDay[selectedDay] ?? const []),
+      'note_suggestions': _buildNoteSuggestions(),
     };
   }
 
@@ -679,6 +680,61 @@ class _PreviewDayStore {
     for (final entries in _entriesByDay.values) {
       entries.removeWhere((entry) => entry['id'] == entryId);
     }
+  }
+
+  Map<String, List<String>> _buildNoteSuggestions() {
+    final allEntries = <Map<String, dynamic>>[];
+    for (final dayEntries in _entriesByDay.entries) {
+      final dateValue = dayEntries.key.millisecondsSinceEpoch;
+      for (final entry in dayEntries.value) {
+        allEntries.add(<String, dynamic>{
+          ...Map<String, dynamic>.from(entry),
+          'date': dateValue,
+        });
+      }
+    }
+
+    allEntries.sort((left, right) {
+      final leftDate = left['date'] as int? ?? 0;
+      final rightDate = right['date'] as int? ?? 0;
+      final dateComparison = rightDate.compareTo(leftDate);
+      if (dateComparison != 0) {
+        return dateComparison;
+      }
+
+      final leftStart = left['start_minutes'] as int? ?? 0;
+      final rightStart = right['start_minutes'] as int? ?? 0;
+      final startComparison = rightStart.compareTo(leftStart);
+      if (startComparison != 0) {
+        return startComparison;
+      }
+
+      final leftId = left['id'] as int? ?? 0;
+      final rightId = right['id'] as int? ?? 0;
+      return rightId.compareTo(leftId);
+    });
+
+    final suggestionsByKey = <String, List<String>>{};
+    final seenNotesByKey = <String, Set<String>>{};
+
+    for (final entry in allEntries) {
+      final projectId = entry['project_id'] as int?;
+      final taskId = entry['task_id'] as int?;
+      final note = (entry['note'] as String? ?? '').trim();
+      if (projectId == null || taskId == null || note.isEmpty) {
+        continue;
+      }
+
+      final key = '$projectId:$taskId';
+      final seenNotes = seenNotesByKey.putIfAbsent(key, () => <String>{});
+      if (!seenNotes.add(note)) {
+        continue;
+      }
+
+      suggestionsByKey.putIfAbsent(key, () => <String>[]).add(note);
+    }
+
+    return suggestionsByKey;
   }
 
   static int _nextId(Map<DateTime, List<Map<String, dynamic>>> entriesByDay) {

@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:path/path.dart' as path;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -71,6 +72,33 @@ void main() {
       expect(await helper.getAllEntityKinds(), hasLength(1));
     },
   );
+
+  test('database paths separate development and release directories', () {
+    final releasePath = DbHelper.databaseDirectoryPathForBuildMode(
+      isReleaseMode: true,
+    );
+    final developmentPath = DbHelper.databaseDirectoryPathForBuildMode(
+      isReleaseMode: false,
+    );
+
+    if (Platform.isWindows) {
+      expect(
+        path.normalize(releasePath),
+        endsWith(path.normalize(r'Clockwork Software\Clockwork')),
+      );
+      expect(
+        path.normalize(developmentPath),
+        endsWith(path.normalize(r'Clockwork Software\Clockwork Dev')),
+      );
+      expect(
+        path.normalize(developmentPath),
+        isNot(path.normalize(releasePath)),
+      );
+      return;
+    }
+
+    expect(developmentPath, isNot(releasePath));
+  });
 
   test('entity CRUD stores and updates typed component values', () async {
     final nameKindId = await helper.createCompKind(
@@ -547,6 +575,70 @@ void main() {
     expect(entries, hasLength(1));
     expect(entries.single['billable_value'], 0);
   });
+
+  test(
+    'getDayPageData returns most recent note suggestions for each project task combination',
+    () async {
+      final atlasIds = await _createProjectAndTask(
+        helper,
+        await _loadRequiredDayDefinitions(helper),
+        projectName: 'Project Atlas',
+        taskName: 'Client Workshop',
+      );
+      final bravoIds = await _createProjectAndTask(
+        helper,
+        await _loadRequiredDayDefinitions(helper),
+        projectName: 'Project Bravo',
+        taskName: 'Returns',
+      );
+
+      await helper.saveDayEntry(
+        date: DateTime(2026, 4, 5),
+        projectId: atlasIds.projectId,
+        taskId: atlasIds.taskId,
+        startMinutes: 9 * 60,
+        endMinutes: 10 * 60,
+        note: 'Regression Retest',
+      );
+      await helper.saveDayEntry(
+        date: DateTime(2026, 4, 6),
+        projectId: atlasIds.projectId,
+        taskId: atlasIds.taskId,
+        startMinutes: 11 * 60,
+        endMinutes: 12 * 60,
+        note: 'Regression Review',
+      );
+      await helper.saveDayEntry(
+        date: DateTime(2026, 4, 7),
+        projectId: atlasIds.projectId,
+        taskId: atlasIds.taskId,
+        startMinutes: 13 * 60,
+        endMinutes: 14 * 60,
+        note: 'Regression Review',
+      );
+      await helper.saveDayEntry(
+        date: DateTime(2026, 4, 7),
+        projectId: bravoIds.projectId,
+        taskId: bravoIds.taskId,
+        startMinutes: 9 * 60,
+        endMinutes: 10 * 60,
+        note: 'Returns investigation',
+      );
+
+      final dayData = await helper.getDayPageData(DateTime(2026, 4, 7));
+      final noteSuggestions = Map<String, dynamic>.from(
+        dayData['note_suggestions'] as Map<dynamic, dynamic>? ?? const {},
+      );
+
+      expect(noteSuggestions['${atlasIds.projectId}:${atlasIds.taskId}'], [
+        'Regression Review',
+        'Regression Retest',
+      ]);
+      expect(noteSuggestions['${bravoIds.projectId}:${bravoIds.taskId}'], [
+        'Returns investigation',
+      ]);
+    },
+  );
 
   test('getWeekPageData loads the containing Monday to Sunday week', () async {
     final definitions = await _loadRequiredDayDefinitions(helper);

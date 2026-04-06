@@ -12,6 +12,7 @@ For the main project, product, and architectural context, start with
 - Version source: `pubspec.yaml`
 - Windows install directory: `%LocalAppData%\Programs\Clockwork`
 - Windows data directory: `%APPDATA%\Clockwork Software\Clockwork`
+- Windows development data directory: `%APPDATA%\Clockwork Software\Clockwork Dev`
 - Installer artifact: `ClockworkSetup-<version>.exe`
 
 ## Prerequisites
@@ -79,6 +80,8 @@ Use a clean Windows machine or VM for every candidate release.
 ## Internal install notes
 
 - The installer is per-user and does not require admin rights.
+- Non-release app runs should use the separate development data directory and
+  must not share the installed release database.
 - Because this release is not code-signed yet, Windows may show a SmartScreen warning.
 - If SmartScreen appears, the user can select `More info` and then `Run anyway`.
 - Uninstall removes the application binaries and shortcuts, but it does not remove the SQLite data directory.

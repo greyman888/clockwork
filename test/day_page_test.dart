@@ -1,5 +1,6 @@
 import 'package:clockwork/day_page.dart';
 import 'package:fluent_ui/fluent_ui.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -125,6 +126,111 @@ void main() {
     },
   );
 
+  testWidgets(
+    'new day-row note field auto-completes the most recent matching note for the selected project task',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        FluentApp(
+          home: DayPage(
+            initialDay: DateTime(2026, 4, 8),
+            loadDayPageData: (_) async => _buildDayPageData(),
+            saveDayEntry: (_) async {},
+            deleteDayEntry: (_) async {},
+            todayProvider: () => DateTime(2026, 4, 8),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final projectTextBoxFinder = find.descendant(
+        of: find.byKey(const Key('dayNewRowProjectField')),
+        matching: find.byType(TextBox),
+      );
+      await tester.tap(projectTextBoxFinder);
+      await tester.pump();
+      await tester.enterText(projectTextBoxFinder, 'a');
+      await tester.pump();
+
+      final taskTextBoxFinder = find.descendant(
+        of: find.byKey(const Key('dayNewRowTaskField')),
+        matching: find.byType(TextBox),
+      );
+      await tester.tap(taskTextBoxFinder);
+      await tester.pump();
+      await tester.enterText(taskTextBoxFinder, 'u');
+      await tester.pump();
+
+      final noteTextBoxFinder = find.descendant(
+        of: find.byKey(const Key('dayNewRowNoteField')),
+        matching: find.byType(TextBox),
+      );
+      await tester.tap(noteTextBoxFinder);
+      await tester.pump();
+      await tester.enterText(noteTextBoxFinder, 'reg');
+      await tester.pump();
+
+      final noteTextBox = tester.widget<TextBox>(noteTextBoxFinder);
+      final controller = noteTextBox.controller!;
+
+      expect(controller.text, 'Regression Review');
+      expect(controller.selection.start, 3);
+      expect(controller.selection.end, 17);
+    },
+  );
+
+  testWidgets(
+    'new day-row note field keeps unique text unchanged while filtering suggestions by substring',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        FluentApp(
+          home: DayPage(
+            initialDay: DateTime(2026, 4, 8),
+            loadDayPageData: (_) async => _buildDayPageData(),
+            saveDayEntry: (_) async {},
+            deleteDayEntry: (_) async {},
+            todayProvider: () => DateTime(2026, 4, 8),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final projectTextBoxFinder = find.descendant(
+        of: find.byKey(const Key('dayNewRowProjectField')),
+        matching: find.byType(TextBox),
+      );
+      await tester.tap(projectTextBoxFinder);
+      await tester.pump();
+      await tester.enterText(projectTextBoxFinder, 'a');
+      await tester.pump();
+
+      final noteFieldFinder = find.byKey(const Key('dayNewRowNoteField'));
+      final noteTextBoxFinder = find.descendant(
+        of: noteFieldFinder,
+        matching: find.byType(TextBox),
+      );
+      await tester.tap(noteTextBoxFinder);
+      await tester.pump();
+      await tester.enterText(noteTextBoxFinder, 'view');
+      await tester.pump();
+
+      final noteTextBox = tester.widget<TextBox>(noteTextBoxFinder);
+      expect(noteTextBox.controller!.text, 'view');
+
+      final noteBox = tester.widget<AutoSuggestBox<String>>(noteFieldFinder);
+      final sortedItems = noteBox.sorter!.call('view', noteBox.items);
+      expect(
+        sortedItems.map((item) => item.label),
+        contains('Regression Review'),
+      );
+    },
+  );
+
   testWidgets('new day-row requires a note before save is enabled', (
     tester,
   ) async {
@@ -152,7 +258,10 @@ void main() {
     expect(saveButton.onPressed, isNull);
 
     await tester.enterText(
-      find.byKey(const Key('dayNewRowNoteField')),
+      find.descendant(
+        of: find.byKey(const Key('dayNewRowNoteField')),
+        matching: find.byType(TextBox),
+      ),
       'UAT integration investigation',
     );
     await tester.pump();
@@ -185,15 +294,17 @@ void main() {
     await tester.pumpAndSettle();
 
     await _populateNewRowRequiredFields(tester);
-    await tester.tap(find.byKey(const Key('dayNewRowNoteField')));
-    await tester.pump();
-    await tester.enterText(
-      find.byKey(const Key('dayNewRowNoteField')),
-      'UAT integration investigation',
+    final noteTextBoxFinder = find.descendant(
+      of: find.byKey(const Key('dayNewRowNoteField')),
+      matching: find.byType(TextBox),
     );
+    await tester.tap(noteTextBoxFinder);
+    await tester.pump();
+    await tester.enterText(noteTextBoxFinder, 'UAT integration investigation');
     await tester.pump();
 
-    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.sendKeyDownEvent(LogicalKeyboardKey.enter);
+    await tester.sendKeyUpEvent(LogicalKeyboardKey.enter);
     await tester.pumpAndSettle();
 
     expect(savedRequests, hasLength(1));
@@ -246,6 +357,15 @@ Map<String, dynamic> _buildDayPageData() {
       {'id': 12, 'project_id': 1, 'name': 'Error Proofing'},
       {'id': 21, 'project_id': 2, 'name': 'Returns'},
     ],
+    'note_suggestions': const {
+      '1:11': [
+        'Regression Review',
+        'Regression Retest',
+        'UAT Support Follow Up',
+      ],
+      '1:12': ['Error Proofing Follow Up'],
+      '2:21': ['Returns investigation'],
+    },
     'entries': const <Map<String, dynamic>>[],
   };
 }

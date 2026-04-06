@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/services.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 
@@ -107,6 +109,7 @@ class _DayPageState extends State<DayPage> {
   List<Map<String, dynamic>> _projects = const [];
   List<Map<String, dynamic>> _tasks = const [];
   List<_DayEntryDraft> _rows = const [];
+  Map<String, List<String>> _noteSuggestions = const {};
   bool _isLoading = true;
   String? _loadError;
 
@@ -154,6 +157,9 @@ class _DayPageState extends State<DayPage> {
       final entries = List<Map<String, dynamic>>.from(
         dayData['entries'] as List<dynamic>? ?? const [],
       );
+      final noteSuggestions = _normalizeNoteSuggestions(
+        dayData['note_suggestions'],
+      );
       final nextRows = _buildRows(entries);
 
       if (!mounted) {
@@ -166,6 +172,7 @@ class _DayPageState extends State<DayPage> {
         _projects = projects;
         _tasks = tasks;
         _rows = nextRows;
+        _noteSuggestions = noteSuggestions;
       });
       _focusNewRowProjectField(nextRows, projects);
     } catch (error) {
@@ -178,6 +185,7 @@ class _DayPageState extends State<DayPage> {
         _projects = const [];
         _tasks = const [];
         _rows = const [];
+        _noteSuggestions = const {};
         _loadError = error.toString();
       });
     } finally {
@@ -256,6 +264,37 @@ class _DayPageState extends State<DayPage> {
     return _tasks.where((task) => task['project_id'] == projectId).toList();
   }
 
+  Map<String, List<String>> _normalizeNoteSuggestions(dynamic rawSuggestions) {
+    if (rawSuggestions is! Map) {
+      return const {};
+    }
+
+    final normalized = <String, List<String>>{};
+    rawSuggestions.forEach((key, value) {
+      if (value is List) {
+        normalized[key.toString()] = value
+            .map((note) => note?.toString() ?? '')
+            .where((note) => note.trim().isNotEmpty)
+            .toList(growable: false);
+      }
+    });
+
+    return normalized;
+  }
+
+  String _noteSuggestionKey(int? projectId, int? taskId) {
+    if (projectId == null || taskId == null) {
+      return '';
+    }
+
+    return '$projectId:$taskId';
+  }
+
+  List<String> _noteSuggestionsForRow(_DayEntryDraft row) {
+    return _noteSuggestions[_noteSuggestionKey(row.projectId, row.taskId)] ??
+        const [];
+  }
+
   Map<String, dynamic>? _firstTaskPrefixMatch(int? projectId, String query) {
     final normalizedQuery = query.trim().toLowerCase();
     if (normalizedQuery.isEmpty || projectId == null) {
@@ -310,9 +349,15 @@ class _DayPageState extends State<DayPage> {
         .toList(growable: false);
   }
 
-  List<AutoSuggestBoxItem<int?>> _prefixSorter(
+  List<AutoSuggestBoxItem<String>> _noteItemsForRow(_DayEntryDraft row) {
+    return _noteSuggestionsForRow(row)
+        .map((note) => AutoSuggestBoxItem<String>(value: note, label: note))
+        .toList(growable: false);
+  }
+
+  List<AutoSuggestBoxItem<T>> _prefixSorter<T>(
     String text,
-    List<AutoSuggestBoxItem<int?>> items,
+    List<AutoSuggestBoxItem<T>> items,
   ) {
     final normalizedText = text.trim().toLowerCase();
     if (normalizedText.isEmpty) {
@@ -322,6 +367,22 @@ class _DayPageState extends State<DayPage> {
     return items
         .where((item) {
           return item.label.toLowerCase().startsWith(normalizedText);
+        })
+        .toList(growable: false);
+  }
+
+  List<AutoSuggestBoxItem<T>> _substringSorter<T>(
+    String text,
+    List<AutoSuggestBoxItem<T>> items,
+  ) {
+    final normalizedText = text.trim().toLowerCase();
+    if (normalizedText.isEmpty) {
+      return items;
+    }
+
+    return items
+        .where((item) {
+          return item.label.toLowerCase().contains(normalizedText);
         })
         .toList(growable: false);
   }
@@ -337,6 +398,19 @@ class _DayPageState extends State<DayPage> {
       selection: selection ?? TextSelection.collapsed(offset: text.length),
     );
     row.isApplyingTaskSuggestion = false;
+  }
+
+  void _setNoteControllerValue(
+    _DayEntryDraft row,
+    String text, {
+    TextSelection? selection,
+  }) {
+    row.isApplyingNoteSuggestion = true;
+    row.noteController.value = TextEditingValue(
+      text: text,
+      selection: selection ?? TextSelection.collapsed(offset: text.length),
+    );
+    row.isApplyingNoteSuggestion = false;
   }
 
   void _focusNewRowProjectField(
@@ -477,6 +551,55 @@ class _DayPageState extends State<DayPage> {
   ) {
     setState(() => row.taskId = item.value);
     _setTaskControllerValue(row, item.label);
+  }
+
+  void _handleNoteSuggestionChanged(
+    _DayEntryDraft row,
+    String text,
+    TextChangedReason reason,
+  ) {
+    if (row.isApplyingNoteSuggestion || reason != TextChangedReason.userInput) {
+      return;
+    }
+
+    setState(() {});
+
+    final normalizedQuery = text.trim();
+    if (normalizedQuery.isEmpty) {
+      return;
+    }
+
+    final matchingNote = _noteSuggestionsForRow(row).firstWhere(
+      (note) => note.toLowerCase().contains(normalizedQuery.toLowerCase()),
+      orElse: () => '',
+    );
+    if (matchingNote.isEmpty) {
+      return;
+    }
+
+    final matchIndex = matchingNote.toLowerCase().indexOf(
+      normalizedQuery.toLowerCase(),
+    );
+    if (matchIndex != 0 || text == matchingNote) {
+      return;
+    }
+
+    _setNoteControllerValue(
+      row,
+      matchingNote,
+      selection: TextSelection(
+        baseOffset: normalizedQuery.length.clamp(0, matchingNote.length),
+        extentOffset: matchingNote.length,
+      ),
+    );
+  }
+
+  void _handleNoteSuggestionSelected(
+    _DayEntryDraft row,
+    AutoSuggestBoxItem<String> item,
+  ) {
+    setState(() {});
+    _setNoteControllerValue(row, item.value ?? item.label);
   }
 
   Future<void> _saveRow(_DayEntryDraft row) async {
@@ -1007,6 +1130,7 @@ class _DayPageState extends State<DayPage> {
     final tasksForProject = _tasksForProject(row.projectId);
     final projectItems = _projectItems();
     final taskItems = _taskItemsForProject(row.projectId);
+    final noteItems = _noteItemsForRow(row);
     final durationLabel = _formatRowDuration(row);
     final showOverlapWarning =
         row.showTimeWarnings && overlappingRows.contains(row);
@@ -1166,22 +1290,40 @@ class _DayPageState extends State<DayPage> {
         _tableCell(
           child: _orderedField(
             order: 6,
-            child: SizedBox(
-              width: double.infinity,
-              child: TextBox(
-                key: row.entryId == null
-                    ? const Key('dayNewRowNoteField')
-                    : null,
-                controller: row.noteController,
-                placeholder: 'What did you work on?',
-                textInputAction: TextInputAction.done,
-                enabled: !row.isSaving,
-                onChanged: (_) => setState(() {}),
-                onSubmitted: (_) async {
+            child: Focus(
+              onKeyEvent: (node, event) {
+                if (!(event is KeyDownEvent || event is KeyRepeatEvent)) {
+                  return KeyEventResult.ignored;
+                }
+
+                if (event.logicalKey == LogicalKeyboardKey.enter ||
+                    event.logicalKey == LogicalKeyboardKey.numpadEnter) {
                   if (!row.isSaving) {
-                    await _saveRow(row);
+                    unawaited(_saveRow(row));
                   }
-                },
+                  return KeyEventResult.handled;
+                }
+
+                return KeyEventResult.ignored;
+              },
+              child: SizedBox(
+                width: double.infinity,
+                child: AutoSuggestBox<String>(
+                  key: row.entryId == null
+                      ? const Key('dayNewRowNoteField')
+                      : null,
+                  controller: row.noteController,
+                  items: noteItems,
+                  sorter: _substringSorter,
+                  placeholder: 'What did you work on?',
+                  clearButtonEnabled: false,
+                  textInputAction: TextInputAction.done,
+                  enabled: !row.isSaving,
+                  onChanged: (text, reason) =>
+                      _handleNoteSuggestionChanged(row, text, reason),
+                  onSelected: (item) =>
+                      _handleNoteSuggestionSelected(row, item),
+                ),
               ),
             ),
           ),
@@ -1304,6 +1446,7 @@ class _DayEntryDraft {
   bool isSaving = false;
   bool isApplyingProjectSuggestion = false;
   bool isApplyingTaskSuggestion = false;
+  bool isApplyingNoteSuggestion = false;
   bool showTimeWarnings;
 
   int? get startMinutes {

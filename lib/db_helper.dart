@@ -38,6 +38,8 @@ class DbHelper {
   static const String productName = 'Clockwork';
   static const String publisherName = 'Clockwork Software';
   static const String applicationId = 'software.clockwork.clockwork';
+  static const String developmentProductName = '$productName Dev';
+  static const String developmentApplicationId = '$applicationId.dev';
 
   static const String storageInteger = 'integer';
   static const String storageReal = 'real';
@@ -1038,7 +1040,36 @@ class DbHelper {
       'projects': sourceData.projects,
       'tasks': sourceData.tasks,
       'entries': entries,
+      'note_suggestions': _buildDayNoteSuggestions(sourceData.entries),
     };
+  }
+
+  Map<String, List<String>> _buildDayNoteSuggestions(
+    List<Map<String, dynamic>> entries,
+  ) {
+    final sortedEntries = List<Map<String, dynamic>>.from(entries)
+      ..sort(_compareDayNoteSuggestionEntries);
+    final suggestionsByKey = <String, List<String>>{};
+    final seenNotesByKey = <String, Set<String>>{};
+
+    for (final entry in sortedEntries) {
+      final projectId = entry['project_id'] as int?;
+      final taskId = entry['task_id'] as int?;
+      final note = (entry['note'] as String? ?? '').trim();
+      if (projectId == null || taskId == null || note.isEmpty) {
+        continue;
+      }
+
+      final key = '$projectId:$taskId';
+      final seenNotes = seenNotesByKey.putIfAbsent(key, () => <String>{});
+      if (!seenNotes.add(note)) {
+        continue;
+      }
+
+      suggestionsByKey.putIfAbsent(key, () => <String>[]).add(note);
+    }
+
+    return suggestionsByKey;
   }
 
   Future<Map<String, dynamic>> getWeekPageData(DateTime date) async {
@@ -1774,6 +1805,47 @@ class DbHelper {
     }
 
     return (left['id'] as int).compareTo(right['id'] as int);
+  }
+
+  int _compareDayNoteSuggestionEntries(
+    Map<String, dynamic> left,
+    Map<String, dynamic> right,
+  ) {
+    final leftDate = left['date'] as int?;
+    final rightDate = right['date'] as int?;
+
+    if (leftDate == null && rightDate != null) {
+      return 1;
+    }
+    if (leftDate != null && rightDate == null) {
+      return -1;
+    }
+    if (leftDate != null && rightDate != null) {
+      final dateCompare = rightDate.compareTo(leftDate);
+      if (dateCompare != 0) {
+        return dateCompare;
+      }
+    }
+
+    final leftStart = left['start_minutes'] as int?;
+    final rightStart = right['start_minutes'] as int?;
+
+    if (leftStart == null && rightStart != null) {
+      return 1;
+    }
+    if (leftStart != null && rightStart == null) {
+      return -1;
+    }
+    if (leftStart != null && rightStart != null) {
+      final startCompare = rightStart.compareTo(leftStart);
+      if (startCompare != 0) {
+        return startCompare;
+      }
+    }
+
+    final leftId = left['id'] as int? ?? 0;
+    final rightId = right['id'] as int? ?? 0;
+    return rightId.compareTo(leftId);
   }
 
   int _compareWeekRows(Map<String, dynamic> left, Map<String, dynamic> right) {
@@ -3058,11 +3130,34 @@ class DbHelper {
     _db = null;
   }
 
-  static String defaultDatabaseDirectoryPath() {
+  static String databaseDirectoryPathForBuildMode({
+    required bool isReleaseMode,
+  }) {
+    return defaultDatabaseDirectoryPath(
+      windowsDirectoryName: isReleaseMode
+          ? productName
+          : developmentProductName,
+      applicationSupportId: isReleaseMode
+          ? applicationId
+          : developmentApplicationId,
+      fallbackDirectoryName: isReleaseMode ? '.clockwork' : '.clockwork-dev',
+    );
+  }
+
+  static String defaultDatabaseDirectoryPath({
+    String? windowsDirectoryName,
+    String? applicationSupportId,
+    String? fallbackDirectoryName,
+  }) {
+    final effectiveWindowsDirectoryName = windowsDirectoryName ?? productName;
+    final effectiveApplicationSupportId = applicationSupportId ?? applicationId;
+    final effectiveFallbackDirectoryName =
+        fallbackDirectoryName ?? '.clockwork';
+
     if (Platform.isWindows) {
       final appData = Platform.environment['APPDATA'];
       if (appData != null && appData.trim().isNotEmpty) {
-        return path.join(appData, publisherName, productName);
+        return path.join(appData, publisherName, effectiveWindowsDirectoryName);
       }
     }
 
@@ -3073,20 +3168,25 @@ class DbHelper {
         homePath,
         'Library',
         'Application Support',
-        applicationId,
+        effectiveApplicationSupportId,
       );
     }
 
     if (Platform.isLinux && homePath != null && homePath.trim().isNotEmpty) {
       final xdgDataHome = Platform.environment['XDG_DATA_HOME'];
       if (xdgDataHome != null && xdgDataHome.trim().isNotEmpty) {
-        return path.join(xdgDataHome, applicationId);
+        return path.join(xdgDataHome, effectiveApplicationSupportId);
       }
 
-      return path.join(homePath, '.local', 'share', applicationId);
+      return path.join(
+        homePath,
+        '.local',
+        'share',
+        effectiveApplicationSupportId,
+      );
     }
 
-    return path.join(Directory.current.path, '.clockwork');
+    return path.join(Directory.current.path, effectiveFallbackDirectoryName);
   }
 
   static String defaultDatabasePath({String dbName = 'clockwork.db'}) {

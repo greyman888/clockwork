@@ -105,6 +105,17 @@ Expected behavior:
 - As the user types in the Task field, the first matching task name for the
   selected project should be auto-completed into the field with the suggested
   remainder selected.
+- The Note field on the Day row should use auto-suggest based on previously
+  used notes for the selected project and task combination.
+- Note suggestions should use substring matching rather than prefix-only
+  matching.
+- The most recently used matching note for the selected project and task
+  combination should appear first in the suggestions.
+- When typing begins with the start of a previous note, the first matching note
+  should be auto-completed into the field with the suggested remainder
+  selected.
+- The Note field must still allow unique free-text values. If no previous note
+  matches the typed text, keep the user's text unchanged.
 - A note is required before a Day row can be saved.
 - Pressing `Enter` in the Day row note field should submit that row.
 - On Windows startup, the default app window width should be wide enough to
@@ -279,6 +290,10 @@ live database should be updated in the same step.
 - UI changes that could introduce layout reflow, jank, or reduced smoothness
   should be identified and discussed.
 - Prefer default Flutter and Dart APIs where practical.
+- Non-release app builds must use a separate development database location from
+  installed release builds.
+- On Windows, development runs should use `%APPDATA%\Clockwork Software\Clockwork Dev`
+  and release installs should use `%APPDATA%\Clockwork Software\Clockwork`.
 - Remove redundant code when possible.
 - Keep the code easy for both human and AI agents to understand.
 - Prefer readable statements over compressed cleverness.
