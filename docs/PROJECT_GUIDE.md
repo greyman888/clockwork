@@ -100,6 +100,11 @@ Expected behavior:
 - As the user types, the first matching project name should be auto-completed
   into the field with the suggested remainder selected, so typing `a` can
   become `Adore` and continuing with `d` refines the field to `Adore`.
+- The Task field on the Day row should mirror the Project field auto-suggest
+  behavior, but remain filtered to the selected project.
+- As the user types in the Task field, the first matching task name for the
+  selected project should be auto-completed into the field with the suggested
+  remainder selected.
 - A note is required before a Day row can be saved.
 - Pressing `Enter` in the Day row note field should submit that row.
 - On Windows startup, the default app window width should be wide enough to

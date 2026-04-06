@@ -195,6 +195,7 @@ class _DayPageState extends State<DayPage> {
             projectId: entry['project_id'] as int?,
             projectName: entry['project_name'] as String? ?? '',
             taskId: entry['task_id'] as int?,
+            taskName: entry['task_name'] as String? ?? '',
             billableValue: entry['billable_value'] as int? ?? 0,
             startMinutes: entry['start_minutes'] as int?,
             endMinutes: entry['end_minutes'] as int?,
@@ -255,6 +256,22 @@ class _DayPageState extends State<DayPage> {
     return _tasks.where((task) => task['project_id'] == projectId).toList();
   }
 
+  Map<String, dynamic>? _firstTaskPrefixMatch(int? projectId, String query) {
+    final normalizedQuery = query.trim().toLowerCase();
+    if (normalizedQuery.isEmpty || projectId == null) {
+      return null;
+    }
+
+    for (final task in _tasksForProject(projectId)) {
+      final taskName = (task['name'] as String? ?? '').toLowerCase();
+      if (taskName.startsWith(normalizedQuery)) {
+        return task;
+      }
+    }
+
+    return null;
+  }
+
   Map<String, dynamic>? _firstProjectPrefixMatch(String query) {
     final normalizedQuery = query.trim().toLowerCase();
     if (normalizedQuery.isEmpty) {
@@ -282,7 +299,18 @@ class _DayPageState extends State<DayPage> {
         .toList(growable: false);
   }
 
-  List<AutoSuggestBoxItem<int?>> _projectPrefixSorter(
+  List<AutoSuggestBoxItem<int?>> _taskItemsForProject(int? projectId) {
+    return _tasksForProject(projectId)
+        .map(
+          (task) => AutoSuggestBoxItem<int?>(
+            value: task['id'] as int,
+            label: task['name'] as String,
+          ),
+        )
+        .toList(growable: false);
+  }
+
+  List<AutoSuggestBoxItem<int?>> _prefixSorter(
     String text,
     List<AutoSuggestBoxItem<int?>> items,
   ) {
@@ -296,6 +324,19 @@ class _DayPageState extends State<DayPage> {
           return item.label.toLowerCase().startsWith(normalizedText);
         })
         .toList(growable: false);
+  }
+
+  void _setTaskControllerValue(
+    _DayEntryDraft row,
+    String text, {
+    TextSelection? selection,
+  }) {
+    row.isApplyingTaskSuggestion = true;
+    row.taskController.value = TextEditingValue(
+      text: text,
+      selection: selection ?? TextSelection.collapsed(offset: text.length),
+    );
+    row.isApplyingTaskSuggestion = false;
   }
 
   void _focusNewRowProjectField(
@@ -321,15 +362,26 @@ class _DayPageState extends State<DayPage> {
     final hasCurrentTask = availableTasks.any(
       (task) => task['id'] == row.taskId,
     );
+    final nextTask = hasCurrentTask
+        ? availableTasks.firstWhere((task) => task['id'] == row.taskId)
+        : availableTasks.isEmpty
+        ? null
+        : availableTasks.first;
+    final nextTaskId = nextTask?['id'] as int?;
+    final nextTaskName = nextTask?['name'] as String? ?? '';
+    final selectSuggestedTask = nextTaskId != null && nextTaskId != row.taskId;
 
     setState(() {
       row.projectId = projectId;
-      row.taskId = hasCurrentTask
-          ? row.taskId
-          : availableTasks.isEmpty
-          ? null
-          : availableTasks.first['id'] as int;
+      row.taskId = nextTaskId;
     });
+    _setTaskControllerValue(
+      row,
+      nextTaskName,
+      selection: selectSuggestedTask && nextTaskName.isNotEmpty
+          ? TextSelection(baseOffset: 0, extentOffset: nextTaskName.length)
+          : TextSelection.collapsed(offset: nextTaskName.length),
+    );
   }
 
   void _handleProjectSuggestionChanged(
@@ -380,8 +432,51 @@ class _DayPageState extends State<DayPage> {
     _applyProjectSelection(row, item.value);
   }
 
-  void _handleTaskChanged(_DayEntryDraft row, int? taskId) {
+  void _handleTaskSuggestionChanged(
+    _DayEntryDraft row,
+    String text,
+    TextChangedReason reason,
+  ) {
+    if (row.isApplyingTaskSuggestion || reason != TextChangedReason.userInput) {
+      return;
+    }
+
+    final normalizedQuery = text.trim();
+    if (normalizedQuery.isEmpty) {
+      setState(() => row.taskId = null);
+      return;
+    }
+
+    final matchingTask = _firstTaskPrefixMatch(row.projectId, normalizedQuery);
+    if (matchingTask == null) {
+      setState(() => row.taskId = null);
+      return;
+    }
+
+    final taskId = matchingTask['id'] as int;
+    final taskName = matchingTask['name'] as String;
     setState(() => row.taskId = taskId);
+
+    if (text == taskName) {
+      return;
+    }
+
+    _setTaskControllerValue(
+      row,
+      taskName,
+      selection: TextSelection(
+        baseOffset: normalizedQuery.length.clamp(0, taskName.length),
+        extentOffset: taskName.length,
+      ),
+    );
+  }
+
+  void _handleTaskSuggestionSelected(
+    _DayEntryDraft row,
+    AutoSuggestBoxItem<int?> item,
+  ) {
+    setState(() => row.taskId = item.value);
+    _setTaskControllerValue(row, item.label);
   }
 
   Future<void> _saveRow(_DayEntryDraft row) async {
@@ -911,6 +1006,7 @@ class _DayPageState extends State<DayPage> {
     final theme = FluentTheme.of(context);
     final tasksForProject = _tasksForProject(row.projectId);
     final projectItems = _projectItems();
+    final taskItems = _taskItemsForProject(row.projectId);
     final durationLabel = _formatRowDuration(row);
     final showOverlapWarning =
         row.showTimeWarnings && overlappingRows.contains(row);
@@ -931,7 +1027,7 @@ class _DayPageState extends State<DayPage> {
                 controller: row.projectController,
                 focusNode: row.projectFocusNode,
                 items: projectItems,
-                sorter: _projectPrefixSorter,
+                sorter: _prefixSorter,
                 placeholder: 'Select project',
                 clearButtonEnabled: false,
                 enabled: !row.isSaving,
@@ -949,30 +1045,23 @@ class _DayPageState extends State<DayPage> {
             order: 2,
             child: SizedBox(
               width: double.infinity,
-              child: ComboBox<int?>(
-                value: row.taskId,
-                isExpanded: true,
-                items: [
-                  ComboBoxItem<int?>(
-                    value: null,
-                    child: Text(
-                      row.projectId == null
-                          ? 'Select project first'
-                          : tasksForProject.isEmpty
-                          ? 'No tasks for project'
-                          : 'Select task',
-                    ),
-                  ),
-                  ...tasksForProject.map(
-                    (task) => ComboBoxItem<int?>(
-                      value: task['id'] as int,
-                      child: Text(task['name'] as String),
-                    ),
-                  ),
-                ],
-                onChanged: row.isSaving || row.projectId == null
-                    ? null
-                    : (value) => _handleTaskChanged(row, value),
+              child: AutoSuggestBox<int?>(
+                key: row.entryId == null
+                    ? const Key('dayNewRowTaskField')
+                    : null,
+                controller: row.taskController,
+                items: taskItems,
+                sorter: _prefixSorter,
+                placeholder: row.projectId == null
+                    ? 'Select project first'
+                    : tasksForProject.isEmpty
+                    ? 'No tasks for project'
+                    : 'Select task',
+                clearButtonEnabled: false,
+                enabled: !row.isSaving && row.projectId != null,
+                onChanged: (text, reason) =>
+                    _handleTaskSuggestionChanged(row, text, reason),
+                onSelected: (item) => _handleTaskSuggestionSelected(row, item),
               ),
             ),
           ),
@@ -1166,10 +1255,12 @@ class _DayEntryDraft {
     this.billableValue = 0,
     this.showTimeWarnings = false,
     String projectName = '',
+    String taskName = '',
     int? startMinutes,
     int? endMinutes,
     String note = '',
   }) : projectController = TextEditingController(text: projectName),
+       taskController = TextEditingController(text: taskName),
        noteController = TextEditingController(text: note),
        startHourController = TextEditingController(
          text: _hourTextFromMinutes(startMinutes),
@@ -1191,6 +1282,7 @@ class _DayEntryDraft {
       billableValue = 1,
       showTimeWarnings = false,
       projectController = TextEditingController(),
+      taskController = TextEditingController(),
       noteController = TextEditingController(),
       startHourController = TextEditingController(),
       startMinuteController = TextEditingController(),
@@ -1203,6 +1295,7 @@ class _DayEntryDraft {
   int billableValue;
   final FocusNode projectFocusNode = FocusNode();
   final TextEditingController projectController;
+  final TextEditingController taskController;
   final TextEditingController noteController;
   final TextEditingController startHourController;
   final TextEditingController startMinuteController;
@@ -1210,6 +1303,7 @@ class _DayEntryDraft {
   final TextEditingController endMinuteController;
   bool isSaving = false;
   bool isApplyingProjectSuggestion = false;
+  bool isApplyingTaskSuggestion = false;
   bool showTimeWarnings;
 
   int? get startMinutes {
@@ -1266,6 +1360,7 @@ class _DayEntryDraft {
   void dispose() {
     projectFocusNode.dispose();
     projectController.dispose();
+    taskController.dispose();
     startHourController.dispose();
     startMinuteController.dispose();
     endHourController.dispose();

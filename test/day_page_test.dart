@@ -79,6 +79,52 @@ void main() {
     },
   );
 
+  testWidgets(
+    'new day-row task field auto-completes the first matching prefix for the selected project',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1400, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        FluentApp(
+          home: DayPage(
+            initialDay: DateTime(2026, 4, 8),
+            loadDayPageData: (_) async => _buildDayPageData(),
+            saveDayEntry: (_) async {},
+            deleteDayEntry: (_) async {},
+            todayProvider: () => DateTime(2026, 4, 8),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final projectTextBoxFinder = find.descendant(
+        of: find.byKey(const Key('dayNewRowProjectField')),
+        matching: find.byType(TextBox),
+      );
+      await tester.tap(projectTextBoxFinder);
+      await tester.pump();
+      await tester.enterText(projectTextBoxFinder, 'a');
+      await tester.pump();
+
+      final taskTextBoxFinder = find.descendant(
+        of: find.byKey(const Key('dayNewRowTaskField')),
+        matching: find.byType(TextBox),
+      );
+      await tester.tap(taskTextBoxFinder);
+      await tester.pump();
+      await tester.enterText(taskTextBoxFinder, 'e');
+      await tester.pump();
+
+      final taskTextBox = tester.widget<TextBox>(taskTextBoxFinder);
+      final controller = taskTextBox.controller!;
+
+      expect(controller.text, 'Error Proofing');
+      expect(controller.selection.start, 1);
+      expect(controller.selection.end, 14);
+    },
+  );
+
   testWidgets('new day-row requires a note before save is enabled', (
     tester,
   ) async {
@@ -197,6 +243,7 @@ Map<String, dynamic> _buildDayPageData() {
     ],
     'tasks': const [
       {'id': 11, 'project_id': 1, 'name': 'UAT Support'},
+      {'id': 12, 'project_id': 1, 'name': 'Error Proofing'},
       {'id': 21, 'project_id': 2, 'name': 'Returns'},
     ],
     'entries': const <Map<String, dynamic>>[],
