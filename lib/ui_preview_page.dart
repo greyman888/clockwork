@@ -1,6 +1,7 @@
 import 'package:fluent_ui/fluent_ui.dart';
 
 import 'day_page.dart';
+import 'setup_and_summary_page.dart';
 import 'time_entry_formatting.dart';
 import 'week_page.dart';
 
@@ -25,6 +26,9 @@ enum _PreviewScenarioId {
   weekLongLabels,
   weekNotesPopup,
   weekWeekdayLinks,
+  setupSummaryEmpty,
+  setupSummaryPopulated,
+  setupSummaryLongNames,
 }
 
 class _PreviewViewportSpec {
@@ -145,6 +149,26 @@ class _UiPreviewPageState extends State<UiPreviewPage> {
       description:
           'Interactive week preview that can drill into the linked day preview.',
     ),
+    _PreviewScenarioDefinition(
+      id: _PreviewScenarioId.setupSummaryEmpty,
+      group: 'Setup and Summary',
+      title: 'Setup and Summary / Empty',
+      description: 'First-run state with no projects or tasks created yet.',
+    ),
+    _PreviewScenarioDefinition(
+      id: _PreviewScenarioId.setupSummaryPopulated,
+      group: 'Setup and Summary',
+      title: 'Setup and Summary / Populated',
+      description:
+          'Typical project and task setup flow with mixed all-time totals and zero-total rows.',
+    ),
+    _PreviewScenarioDefinition(
+      id: _PreviewScenarioId.setupSummaryLongNames,
+      group: 'Setup and Summary',
+      title: 'Setup and Summary / Long Names',
+      description:
+          'Long project and task names to inspect truncation and two-column balance.',
+    ),
   ];
 
   late _PreviewScenarioId _selectedScenario;
@@ -158,6 +182,9 @@ class _UiPreviewPageState extends State<UiPreviewPage> {
   late _PreviewDayStore _dayLongContentStore;
   late _PreviewDayStore _dayBoundaryStore;
   late _PreviewDayStore _linkedWeekDayStore;
+  late _PreviewSetupAndSummaryStore _setupSummaryEmptyStore;
+  late _PreviewSetupAndSummaryStore _setupSummaryPopulatedStore;
+  late _PreviewSetupAndSummaryStore _setupSummaryLongNamesStore;
 
   @override
   void initState() {
@@ -175,6 +202,9 @@ class _UiPreviewPageState extends State<UiPreviewPage> {
     _dayLongContentStore = _buildLongContentDayStore();
     _dayBoundaryStore = _buildBoundaryDayStore();
     _linkedWeekDayStore = _buildLinkedWeekDayStore();
+    _setupSummaryEmptyStore = _buildEmptySetupAndSummaryStore();
+    _setupSummaryPopulatedStore = _buildPopulatedSetupAndSummaryStore();
+    _setupSummaryLongNamesStore = _buildLongNameSetupAndSummaryStore();
   }
 
   _PreviewScenarioDefinition get _selectedDefinition {
@@ -495,6 +525,30 @@ class _UiPreviewPageState extends State<UiPreviewPage> {
           initialSelectedDate: DateTime(2026, 4, 8),
           loadWeekPageData: (_) async => _cloneMap(_buildWeekdayLinkWeekData()),
           todayProvider: () => _previewToday,
+        );
+      case _PreviewScenarioId.setupSummaryEmpty:
+        return SetupAndSummaryPage(
+          key: ValueKey('setup-summary-empty-$_scenarioRevision'),
+          loadPageData: _setupSummaryEmptyStore.load,
+          saveProject: _setupSummaryEmptyStore.saveProject,
+          saveTask: _setupSummaryEmptyStore.saveTask,
+          deleteEntity: _setupSummaryEmptyStore.delete,
+        );
+      case _PreviewScenarioId.setupSummaryPopulated:
+        return SetupAndSummaryPage(
+          key: ValueKey('setup-summary-populated-$_scenarioRevision'),
+          loadPageData: _setupSummaryPopulatedStore.load,
+          saveProject: _setupSummaryPopulatedStore.saveProject,
+          saveTask: _setupSummaryPopulatedStore.saveTask,
+          deleteEntity: _setupSummaryPopulatedStore.delete,
+        );
+      case _PreviewScenarioId.setupSummaryLongNames:
+        return SetupAndSummaryPage(
+          key: ValueKey('setup-summary-long-names-$_scenarioRevision'),
+          loadPageData: _setupSummaryLongNamesStore.load,
+          saveProject: _setupSummaryLongNamesStore.saveProject,
+          saveTask: _setupSummaryLongNamesStore.saveTask,
+          deleteEntity: _setupSummaryLongNamesStore.delete,
         );
     }
   }
@@ -858,6 +912,279 @@ _PreviewDayStore _buildLinkedWeekDayStore() {
         },
       ],
     },
+  );
+}
+
+class _PreviewSetupAndSummaryStore {
+  _PreviewSetupAndSummaryStore({
+    required List<Map<String, dynamic>> projects,
+    required List<Map<String, dynamic>> tasks,
+    required List<Map<String, dynamic>> timeEntries,
+  }) : _projects = _cloneMapList(projects),
+       _tasks = _cloneMapList(tasks),
+       _timeEntries = _cloneMapList(timeEntries),
+       _nextProjectId = _nextEntityId(projects),
+       _nextTaskId = _nextEntityId(tasks);
+
+  final List<Map<String, dynamic>> _projects;
+  final List<Map<String, dynamic>> _tasks;
+  final List<Map<String, dynamic>> _timeEntries;
+  int _nextProjectId;
+  int _nextTaskId;
+
+  Future<Map<String, dynamic>> load() async => _buildPageData();
+
+  Future<int> saveProject(SetupAndSummaryProjectSaveRequest request) async {
+    final normalizedName = request.name.trim();
+    if (normalizedName.isEmpty) {
+      throw Exception('Project name is required.');
+    }
+
+    if (request.projectId == null) {
+      final projectId = _nextProjectId++;
+      _projects.add({'id': projectId, 'name': normalizedName});
+      return projectId;
+    }
+
+    final project = _projects.singleWhere(
+      (candidate) => candidate['id'] == request.projectId,
+      orElse: () =>
+          throw Exception('Project ${request.projectId} was not found.'),
+    );
+    project['name'] = normalizedName;
+    return request.projectId!;
+  }
+
+  Future<int> saveTask(SetupAndSummaryTaskSaveRequest request) async {
+    final normalizedName = request.name.trim();
+    if (normalizedName.isEmpty) {
+      throw Exception('Task name is required.');
+    }
+
+    _projects.singleWhere(
+      (project) => project['id'] == request.projectId,
+      orElse: () =>
+          throw Exception('Project ${request.projectId} was not found.'),
+    );
+
+    if (request.taskId == null) {
+      final taskId = _nextTaskId++;
+      _tasks.add({
+        'id': taskId,
+        'project_id': request.projectId,
+        'name': normalizedName,
+      });
+      return taskId;
+    }
+
+    final task = _tasks.singleWhere(
+      (candidate) => candidate['id'] == request.taskId,
+      orElse: () => throw Exception('Task ${request.taskId} was not found.'),
+    );
+    task['name'] = normalizedName;
+    task['project_id'] = request.projectId;
+    return request.taskId!;
+  }
+
+  Future<void> delete(int entityId) async {
+    final projectIndex = _projects.indexWhere(
+      (project) => project['id'] == entityId,
+    );
+    if (projectIndex >= 0) {
+      final hasTasks = _tasks.any((task) => task['project_id'] == entityId);
+      if (hasTasks) {
+        throw Exception(
+          'Cannot delete entity $entityId because another entity references it.',
+        );
+      }
+      _projects.removeAt(projectIndex);
+      return;
+    }
+
+    final taskIndex = _tasks.indexWhere((task) => task['id'] == entityId);
+    if (taskIndex >= 0) {
+      final hasEntries = _timeEntries.any(
+        (entry) => entry['task_id'] == entityId,
+      );
+      if (hasEntries) {
+        throw Exception(
+          'Cannot delete entity $entityId because another entity references it.',
+        );
+      }
+      _tasks.removeAt(taskIndex);
+      return;
+    }
+
+    throw Exception('Entity $entityId was not found.');
+  }
+
+  Map<String, dynamic> _buildPageData() {
+    final projects = _cloneMapList(_projects)
+      ..sort(
+        (left, right) =>
+            (left['name'] as String).compareTo(right['name'] as String),
+      );
+    final projectNameById = <int, String>{
+      for (final project in projects)
+        project['id'] as int: project['name'] as String,
+    };
+    final tasks = _cloneMapList(_tasks)
+      ..sort((left, right) {
+        final leftProjectName =
+            projectNameById[left['project_id'] as int?] ?? '';
+        final rightProjectName =
+            projectNameById[right['project_id'] as int?] ?? '';
+        final projectComparison = leftProjectName.compareTo(rightProjectName);
+        if (projectComparison != 0) {
+          return projectComparison;
+        }
+
+        return (left['name'] as String).compareTo(right['name'] as String);
+      });
+    final decoratedTasks = tasks
+        .map(
+          (task) => {
+            ...task,
+            'project_name': projectNameById[task['project_id'] as int?],
+          },
+        )
+        .toList(growable: false);
+
+    final taskTotals = <int, int>{};
+    for (final entry in _timeEntries) {
+      final taskId = entry['task_id'] as int?;
+      final durationMinutes = entry['duration_minutes'] as int?;
+      if (taskId == null || durationMinutes == null || durationMinutes <= 0) {
+        continue;
+      }
+
+      taskTotals.update(
+        taskId,
+        (currentValue) => currentValue + durationMinutes,
+        ifAbsent: () => durationMinutes,
+      );
+    }
+
+    final tasksByProjectId = <int?, List<Map<String, dynamic>>>{};
+    for (final task in decoratedTasks) {
+      final projectId = task['project_id'] as int?;
+      tasksByProjectId.putIfAbsent(projectId, () => <Map<String, dynamic>>[]);
+      tasksByProjectId[projectId]!.add(task);
+    }
+
+    final summaryRows = <Map<String, dynamic>>[];
+    for (final project in projects) {
+      final projectId = project['id'] as int;
+      final projectName = project['name'] as String;
+      final projectTasks = tasksByProjectId[projectId] ?? const [];
+      final projectTotalMinutes = projectTasks.fold<int>(0, (total, task) {
+        final taskId = task['id'] as int;
+        return total + (taskTotals[taskId] ?? 0);
+      });
+
+      summaryRows.add({
+        'kind': 'project',
+        'entity_id': projectId,
+        'project_id': projectId,
+        'project_name': projectName,
+        'task_id': null,
+        'task_name': null,
+        'name': projectName,
+        'total_minutes': projectTotalMinutes,
+      });
+
+      for (final task in projectTasks) {
+        final taskId = task['id'] as int;
+        final taskName = task['name'] as String;
+        summaryRows.add({
+          'kind': 'task',
+          'entity_id': taskId,
+          'project_id': projectId,
+          'project_name': projectName,
+          'task_id': taskId,
+          'task_name': taskName,
+          'name': taskName,
+          'total_minutes': taskTotals[taskId] ?? 0,
+        });
+      }
+    }
+
+    return {
+      'projects': projects,
+      'tasks': decoratedTasks,
+      'summary_rows': summaryRows,
+    };
+  }
+
+  static int _nextEntityId(List<Map<String, dynamic>> rows) {
+    if (rows.isEmpty) {
+      return 1;
+    }
+
+    return rows
+            .map((row) => row['id'] as int? ?? 0)
+            .reduce((current, next) => current > next ? current : next) +
+        1;
+  }
+}
+
+_PreviewSetupAndSummaryStore _buildEmptySetupAndSummaryStore() {
+  return _PreviewSetupAndSummaryStore(
+    projects: const [],
+    tasks: const [],
+    timeEntries: const [],
+  );
+}
+
+_PreviewSetupAndSummaryStore _buildPopulatedSetupAndSummaryStore() {
+  return _PreviewSetupAndSummaryStore(
+    projects: const [
+      {'id': 1, 'name': 'Adore'},
+      {'id': 2, 'name': 'Koorong'},
+      {'id': 3, 'name': 'Internal'},
+    ],
+    tasks: const [
+      {'id': 11, 'project_id': 1, 'name': 'UAT Support'},
+      {'id': 12, 'project_id': 1, 'name': 'Error Proofing'},
+      {'id': 21, 'project_id': 2, 'name': 'Returns'},
+      {'id': 31, 'project_id': 3, 'name': 'Release Prep'},
+    ],
+    timeEntries: const [
+      {'task_id': 11, 'duration_minutes': 255},
+      {'task_id': 12, 'duration_minutes': 45},
+      {'task_id': 21, 'duration_minutes': 105},
+    ],
+  );
+}
+
+_PreviewSetupAndSummaryStore _buildLongNameSetupAndSummaryStore() {
+  return _PreviewSetupAndSummaryStore(
+    projects: const [
+      {'id': 41, 'name': 'Northern Territory Migration and Compliance Program'},
+      {'id': 42, 'name': 'Strategic Internal Platform Improvements Initiative'},
+    ],
+    tasks: const [
+      {
+        'id': 411,
+        'project_id': 41,
+        'name': 'Cross-team stakeholder alignment and defect triage',
+      },
+      {
+        'id': 421,
+        'project_id': 42,
+        'name': 'Quarterly workflow resilience and release readiness review',
+      },
+      {
+        'id': 422,
+        'project_id': 42,
+        'name': 'Release communications and readiness checkpoint',
+      },
+    ],
+    timeEntries: const [
+      {'task_id': 411, 'duration_minutes': 195},
+      {'task_id': 421, 'duration_minutes': 135},
+      {'task_id': 422, 'duration_minutes': 0},
+    ],
   );
 }
 

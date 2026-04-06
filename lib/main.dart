@@ -8,12 +8,14 @@ import 'app_db.dart';
 import 'day_page.dart';
 import 'definitions_page.dart';
 import 'entities_page.dart';
+import 'setup_and_summary_page.dart';
 import 'time_entry_formatting.dart';
 import 'ui_preview_page.dart';
 import 'week_page.dart';
 
 const _lightShellColor = Color(0xFFF3F3F3);
 const _darkShellColor = Color(0xFF202020);
+const _developerPagesEnabled = !kReleaseMode;
 const _uiPreviewEnabled =
     !kReleaseMode && bool.fromEnvironment('CLOCKWORK_UI_PREVIEW');
 
@@ -58,7 +60,14 @@ class MainApp extends StatelessWidget {
 }
 
 class ClockworkShell extends StatefulWidget {
-  const ClockworkShell({super.key});
+  const ClockworkShell({
+    this.showDeveloperPages = _developerPagesEnabled,
+    this.showUiPreview = _uiPreviewEnabled,
+    super.key,
+  });
+
+  final bool showDeveloperPages;
+  final bool showUiPreview;
 
   @override
   State<ClockworkShell> createState() => _ClockworkShellState();
@@ -131,16 +140,23 @@ class _ClockworkShellState extends State<ClockworkShell> {
               body: WeekPage(onOpenDay: _openDay),
             ),
             PaneItem(
-              icon: const Icon(FluentIcons.database),
-              title: const Text('Definitions'),
-              body: const DefinitionsPage(),
+              icon: const Icon(FluentIcons.settings),
+              title: const Text('Setup and Summary'),
+              body: const SetupAndSummaryPage(),
             ),
-            PaneItem(
-              icon: const Icon(FluentIcons.task_manager),
-              title: const Text('Entities'),
-              body: const EntitiesPage(),
-            ),
-            if (_uiPreviewEnabled)
+            if (widget.showDeveloperPages)
+              PaneItem(
+                icon: const Icon(FluentIcons.database),
+                title: const Text('Definitions'),
+                body: const DefinitionsPage(),
+              ),
+            if (widget.showDeveloperPages)
+              PaneItem(
+                icon: const Icon(FluentIcons.task_manager),
+                title: const Text('Entities'),
+                body: const EntitiesPage(),
+              ),
+            if (widget.showUiPreview)
               PaneItem(
                 icon: const Icon(FluentIcons.design),
                 title: const Text('Preview'),

@@ -153,6 +153,37 @@ Expected behavior:
 - Hovering over those interactive links should show a pointer cursor and a more
   obvious padded hover target.
 
+## Setup and Summary Page
+
+The Setup and Summary page provides a fast setup surface for projects and tasks
+plus a readonly all-time summary.
+
+Expected behavior:
+
+- The page should be split into two columns on desktop.
+- The left column should provide a compact manager for project and task
+  entities.
+- The manager should be based on the existing entities workflow, but should be
+  specialized so the user can create, edit, and delete projects and then tasks
+  without choosing a generic entity kind.
+- The task manager should default to the currently selected project context and
+  should filter its existing-task list by that project when possible.
+- The right column should show a readonly table of all-time totals across all
+  recorded days.
+- The summary should include a row for every current project entity and every
+  current task entity.
+- Project rows should show aggregate totals for all descendant task time
+  entries.
+- Task rows should show totals for that task across all recorded days.
+- The summary should include both billable and non-billable time.
+- Zero-total projects and tasks should still appear in the summary.
+
+## Navigation
+
+- `Definitions` and `Entities` are development-only pages.
+- They should be visible while the app is running in non-release builds.
+- They should be hidden automatically in compiled release builds.
+
 ## Layout Expectations
 
 These product-specific layout rules matter for the current application:

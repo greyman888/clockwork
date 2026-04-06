@@ -1114,6 +1114,161 @@ class DbHelper {
     };
   }
 
+  Future<Map<String, dynamic>> getSetupAndSummaryPageData() async {
+    final sourceData = await _loadClockworkTimeEntrySourceData();
+    final taskTotals = <int, int>{};
+
+    for (final entry in sourceData.entries) {
+      final taskId = entry['task_id'] as int?;
+      final durationMinutes = entry['duration_minutes'] as int?;
+      if (taskId == null || durationMinutes == null || durationMinutes <= 0) {
+        continue;
+      }
+
+      taskTotals.update(
+        taskId,
+        (currentValue) => currentValue + durationMinutes,
+        ifAbsent: () => durationMinutes,
+      );
+    }
+
+    final tasksByProjectId = <int?, List<Map<String, dynamic>>>{};
+    for (final task in sourceData.tasks) {
+      final projectId = task['project_id'] as int?;
+      tasksByProjectId.putIfAbsent(projectId, () => <Map<String, dynamic>>[]);
+      tasksByProjectId[projectId]!.add(task);
+    }
+
+    final summaryRows = <Map<String, dynamic>>[];
+    for (final project in sourceData.projects) {
+      final projectId = project['id'] as int;
+      final projectName = project['name'] as String;
+      final projectTasks = tasksByProjectId[projectId] ?? const [];
+      final projectTotalMinutes = projectTasks.fold<int>(0, (total, task) {
+        final taskId = task['id'] as int;
+        return total + (taskTotals[taskId] ?? 0);
+      });
+
+      summaryRows.add({
+        'kind': 'project',
+        'entity_id': projectId,
+        'project_id': projectId,
+        'project_name': projectName,
+        'task_id': null,
+        'task_name': null,
+        'name': projectName,
+        'total_minutes': projectTotalMinutes,
+      });
+
+      for (final task in projectTasks) {
+        final taskId = task['id'] as int;
+        final taskName = task['name'] as String;
+        summaryRows.add({
+          'kind': 'task',
+          'entity_id': taskId,
+          'project_id': projectId,
+          'project_name': projectName,
+          'task_id': taskId,
+          'task_name': taskName,
+          'name': taskName,
+          'total_minutes': taskTotals[taskId] ?? 0,
+        });
+      }
+    }
+
+    for (final task
+        in tasksByProjectId[null] ?? const <Map<String, dynamic>>[]) {
+      final taskId = task['id'] as int;
+      final taskName = task['name'] as String;
+      summaryRows.add({
+        'kind': 'task',
+        'entity_id': taskId,
+        'project_id': null,
+        'project_name': null,
+        'task_id': taskId,
+        'task_name': taskName,
+        'name': taskName,
+        'total_minutes': taskTotals[taskId] ?? 0,
+      });
+    }
+
+    return {
+      'projects': sourceData.projects,
+      'tasks': sourceData.tasks,
+      'summary_rows': summaryRows,
+    };
+  }
+
+  Future<int> saveProject({required String name, int? projectId}) async {
+    await ensureRequiredDefinitions();
+    final definitions = await _getClockworkDayDefinitions();
+    final normalizedName = _normalizeRequiredText(name, 'Project name');
+    final componentValues = <int, Object?>{
+      definitions.nameCompKindId: normalizedName,
+    };
+
+    if (projectId == null) {
+      return createEntity(
+        kindId: definitions.projectKindId,
+        componentValues: componentValues,
+      );
+    }
+
+    final existingProject = await getEntity(projectId);
+    if (existingProject == null ||
+        existingProject['kind_id'] != definitions.projectKindId) {
+      throw Exception('Entity $projectId is not a project.');
+    }
+
+    await updateEntity(
+      entityId: projectId,
+      kindId: definitions.projectKindId,
+      componentValues: componentValues,
+    );
+    return projectId;
+  }
+
+  Future<int> saveTask({
+    required String name,
+    required int projectId,
+    int? taskId,
+  }) async {
+    await ensureRequiredDefinitions();
+    final definitions = await _getClockworkDayDefinitions();
+    final normalizedName = _normalizeRequiredText(name, 'Task name');
+    final projectEntity = await getEntity(projectId);
+
+    if (projectEntity == null ||
+        projectEntity['kind_id'] != definitions.projectKindId) {
+      throw Exception('Entity $projectId is not a project.');
+    }
+
+    final componentValues = <int, Object?>{
+      definitions.nameCompKindId: normalizedName,
+      definitions.parentCompKindId: projectId,
+    };
+
+    if (taskId == null) {
+      return createEntity(
+        kindId: definitions.taskKindId,
+        componentValues: componentValues,
+      );
+    }
+
+    final existingTask = await getEntity(taskId);
+    if (existingTask == null ||
+        existingTask['kind_id'] != definitions.taskKindId) {
+      throw Exception('Entity $taskId is not a task.');
+    }
+
+    await updateEntity(
+      entityId: taskId,
+      kindId: definitions.taskKindId,
+      componentValues: componentValues,
+    );
+    return taskId;
+  }
+
   Future<int> saveDayEntry({
     required DateTime date,
     required int projectId,

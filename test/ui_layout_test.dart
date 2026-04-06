@@ -1,4 +1,5 @@
 import 'package:clockwork/day_page.dart';
+import 'package:clockwork/setup_and_summary_page.dart';
 import 'package:clockwork/time_entry_formatting.dart';
 import 'package:clockwork/ui_preview_page.dart';
 import 'package:clockwork/week_page.dart';
@@ -97,6 +98,43 @@ void main() {
             secondLabelKey: 'weekTotalLabel',
             secondControlKey: 'weekTotalField',
           );
+        }
+      },
+    );
+
+    testWidgets(
+      'setup and summary page keeps the desktop columns aligned at both review sizes',
+      (tester) async {
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+
+        for (final size in const [Size(1400, 900), Size(1100, 900)]) {
+          await tester.binding.setSurfaceSize(size);
+          await tester.pumpWidget(
+            FluentApp(
+              home: SetupAndSummaryPage(
+                loadPageData: () async => _buildSetupSummaryLayoutData(),
+                saveProject: (_) async => 1,
+                saveTask: (_) async => 1,
+                deleteEntity: (_) async {},
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          expect(tester.takeException(), isNull);
+
+          final setupColumnRect = tester.getRect(
+            find.byKey(const Key('setupAndSummarySetupColumn')),
+          );
+          final summaryColumnRect = tester.getRect(
+            find.byKey(const Key('setupAndSummarySummaryColumn')),
+          );
+
+          expect(
+            summaryColumnRect.left - setupColumnRect.right,
+            moreOrLessEquals(16, epsilon: 0.1),
+          );
+          expect(setupColumnRect.width, moreOrLessEquals(400, epsilon: 0.1));
         }
       },
     );
@@ -310,5 +348,113 @@ Map<String, dynamic> _buildWeekLayoutData() {
       },
     ],
     'week_total_minutes': 330,
+  };
+}
+
+Map<String, dynamic> _buildSetupSummaryLayoutData() {
+  return {
+    'projects': const [
+      {'id': 1, 'name': 'Project Atlas'},
+      {'id': 2, 'name': 'Project Bravo'},
+      {'id': 3, 'name': 'Project Zero'},
+    ],
+    'tasks': const [
+      {
+        'id': 11,
+        'project_id': 1,
+        'project_name': 'Project Atlas',
+        'name': 'Analysis',
+      },
+      {
+        'id': 12,
+        'project_id': 1,
+        'project_name': 'Project Atlas',
+        'name': 'Reporting',
+      },
+      {
+        'id': 21,
+        'project_id': 2,
+        'project_name': 'Project Bravo',
+        'name': 'Returns',
+      },
+      {
+        'id': 31,
+        'project_id': 3,
+        'project_name': 'Project Zero',
+        'name': 'Planning',
+      },
+    ],
+    'summary_rows': const [
+      {
+        'kind': 'project',
+        'entity_id': 1,
+        'project_id': 1,
+        'project_name': 'Project Atlas',
+        'task_id': null,
+        'task_name': null,
+        'name': 'Project Atlas',
+        'total_minutes': 150,
+      },
+      {
+        'kind': 'task',
+        'entity_id': 11,
+        'project_id': 1,
+        'project_name': 'Project Atlas',
+        'task_id': 11,
+        'task_name': 'Analysis',
+        'name': 'Analysis',
+        'total_minutes': 90,
+      },
+      {
+        'kind': 'task',
+        'entity_id': 12,
+        'project_id': 1,
+        'project_name': 'Project Atlas',
+        'task_id': 12,
+        'task_name': 'Reporting',
+        'name': 'Reporting',
+        'total_minutes': 60,
+      },
+      {
+        'kind': 'project',
+        'entity_id': 2,
+        'project_id': 2,
+        'project_name': 'Project Bravo',
+        'task_id': null,
+        'task_name': null,
+        'name': 'Project Bravo',
+        'total_minutes': 75,
+      },
+      {
+        'kind': 'task',
+        'entity_id': 21,
+        'project_id': 2,
+        'project_name': 'Project Bravo',
+        'task_id': 21,
+        'task_name': 'Returns',
+        'name': 'Returns',
+        'total_minutes': 75,
+      },
+      {
+        'kind': 'project',
+        'entity_id': 3,
+        'project_id': 3,
+        'project_name': 'Project Zero',
+        'task_id': null,
+        'task_name': null,
+        'name': 'Project Zero',
+        'total_minutes': 0,
+      },
+      {
+        'kind': 'task',
+        'entity_id': 31,
+        'project_id': 3,
+        'project_name': 'Project Zero',
+        'task_id': 31,
+        'task_name': 'Planning',
+        'name': 'Planning',
+        'total_minutes': 0,
+      },
+    ],
   };
 }

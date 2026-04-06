@@ -17,7 +17,6 @@ void main() {
   });
 
   setUp(() async {
-
     tempDirectory = await Directory.systemTemp.createTemp('clockwork_test_');
     helper = DbHelper(
       dbName: 'clockwork_test.db',
@@ -924,6 +923,198 @@ void main() {
       expect(weekData['week_total_minutes'], 105);
     },
   );
+
+  test('saveProject creates and updates a project entity', () async {
+    final definitions = await _loadRequiredDayDefinitions(helper);
+
+    final projectId = await helper.saveProject(name: 'Project Atlas');
+    var project = await helper.getEntity(projectId);
+
+    expect(project, isNotNull);
+    expect(project!['kind_id'], definitions.projectKindId);
+    expect(_valueForComponent(project, 'name'), 'Project Atlas');
+
+    final updatedProjectId = await helper.saveProject(
+      name: 'Project Atlas Updated',
+      projectId: projectId,
+    );
+    project = await helper.getEntity(updatedProjectId);
+
+    expect(updatedProjectId, projectId);
+    expect(project, isNotNull);
+    expect(_valueForComponent(project!, 'name'), 'Project Atlas Updated');
+  });
+
+  test('saveTask creates and updates a task entity under a project', () async {
+    final definitions = await _loadRequiredDayDefinitions(helper);
+    final projectId = await helper.saveProject(name: 'Project Atlas');
+
+    final taskId = await helper.saveTask(
+      name: 'Analysis',
+      projectId: projectId,
+    );
+    var task = await helper.getEntity(taskId);
+
+    expect(task, isNotNull);
+    expect(task!['kind_id'], definitions.taskKindId);
+    expect(_valueForComponent(task, 'name'), 'Analysis');
+    expect(_valueForComponent(task, 'parent'), projectId);
+
+    final updatedTaskId = await helper.saveTask(
+      name: 'Design Review',
+      projectId: projectId,
+      taskId: taskId,
+    );
+    task = await helper.getEntity(updatedTaskId);
+
+    expect(updatedTaskId, taskId);
+    expect(task, isNotNull);
+    expect(_valueForComponent(task!, 'name'), 'Design Review');
+    expect(_valueForComponent(task, 'parent'), projectId);
+  });
+
+  test(
+    'getSetupAndSummaryPageData includes zero totals and aggregates task time by project',
+    () async {
+      await _loadRequiredDayDefinitions(helper);
+      final atlasProjectId = await helper.saveProject(name: 'Project Atlas');
+      final atlasAnalysisTaskId = await helper.saveTask(
+        name: 'Analysis',
+        projectId: atlasProjectId,
+      );
+      final atlasReportingTaskId = await helper.saveTask(
+        name: 'Reporting',
+        projectId: atlasProjectId,
+      );
+      final bravoProjectId = await helper.saveProject(name: 'Project Bravo');
+      final bravoReturnsTaskId = await helper.saveTask(
+        name: 'Returns',
+        projectId: bravoProjectId,
+      );
+      final zeroProjectId = await helper.saveProject(name: 'Project Zero');
+      final zeroTaskId = await helper.saveTask(
+        name: 'Planning',
+        projectId: zeroProjectId,
+      );
+
+      await helper.saveDayEntry(
+        date: DateTime(2026, 4, 1),
+        projectId: atlasProjectId,
+        taskId: atlasAnalysisTaskId,
+        startMinutes: 9 * 60,
+        endMinutes: 10 * 60 + 30,
+        billableValue: 1,
+      );
+      await helper.saveDayEntry(
+        date: DateTime(2026, 4, 2),
+        projectId: atlasProjectId,
+        taskId: atlasReportingTaskId,
+        startMinutes: 13 * 60,
+        endMinutes: 14 * 60,
+        billableValue: 0,
+      );
+      await helper.saveDayEntry(
+        date: DateTime(2026, 4, 3),
+        projectId: bravoProjectId,
+        taskId: bravoReturnsTaskId,
+        startMinutes: 11 * 60,
+        endMinutes: 12 * 60 + 15,
+        billableValue: 1,
+      );
+
+      final pageData = await helper.getSetupAndSummaryPageData();
+      final projects = List<Map<String, dynamic>>.from(
+        pageData['projects'] as List<dynamic>? ?? const [],
+      );
+      final tasks = List<Map<String, dynamic>>.from(
+        pageData['tasks'] as List<dynamic>? ?? const [],
+      );
+      final summaryRows = List<Map<String, dynamic>>.from(
+        pageData['summary_rows'] as List<dynamic>? ?? const [],
+      );
+
+      expect(projects.map((project) => project['name']), [
+        'Project Atlas',
+        'Project Bravo',
+        'Project Zero',
+      ]);
+      expect(
+        tasks
+            .map((task) => '${task['project_name']} / ${task['name']}')
+            .toList(),
+        [
+          'Project Atlas / Analysis',
+          'Project Atlas / Reporting',
+          'Project Bravo / Returns',
+          'Project Zero / Planning',
+        ],
+      );
+
+      final atlasProjectRow = _setupSummaryRowFor(
+        summaryRows,
+        kind: 'project',
+        name: 'Project Atlas',
+      );
+      final atlasAnalysisTaskRow = _setupSummaryRowFor(
+        summaryRows,
+        kind: 'task',
+        name: 'Analysis',
+      );
+      final atlasReportingTaskRow = _setupSummaryRowFor(
+        summaryRows,
+        kind: 'task',
+        name: 'Reporting',
+      );
+      final bravoProjectRow = _setupSummaryRowFor(
+        summaryRows,
+        kind: 'project',
+        name: 'Project Bravo',
+      );
+      final bravoTaskRow = _setupSummaryRowFor(
+        summaryRows,
+        kind: 'task',
+        name: 'Returns',
+      );
+      final zeroProjectRow = _setupSummaryRowFor(
+        summaryRows,
+        kind: 'project',
+        name: 'Project Zero',
+      );
+      final zeroTaskRow = _setupSummaryRowFor(
+        summaryRows,
+        kind: 'task',
+        name: 'Planning',
+      );
+
+      expect(atlasProjectRow['entity_id'], atlasProjectId);
+      expect(atlasProjectRow['total_minutes'], 150);
+      expect(atlasAnalysisTaskRow['entity_id'], atlasAnalysisTaskId);
+      expect(atlasAnalysisTaskRow['total_minutes'], 90);
+      expect(atlasReportingTaskRow['entity_id'], atlasReportingTaskId);
+      expect(atlasReportingTaskRow['total_minutes'], 60);
+      expect(bravoProjectRow['entity_id'], bravoProjectId);
+      expect(bravoProjectRow['total_minutes'], 75);
+      expect(bravoTaskRow['entity_id'], bravoReturnsTaskId);
+      expect(bravoTaskRow['total_minutes'], 75);
+      expect(zeroProjectRow['entity_id'], zeroProjectId);
+      expect(zeroProjectRow['total_minutes'], 0);
+      expect(zeroTaskRow['entity_id'], zeroTaskId);
+      expect(zeroTaskRow['total_minutes'], 0);
+
+      expect(
+        summaryRows.map((row) => '${row['kind']}:${row['name']}').toList(),
+        [
+          'project:Project Atlas',
+          'task:Analysis',
+          'task:Reporting',
+          'project:Project Bravo',
+          'task:Returns',
+          'project:Project Zero',
+          'task:Planning',
+        ],
+      );
+    },
+  );
 }
 
 Object? _valueForComponent(Map<String, dynamic> entity, String componentName) {
@@ -1067,6 +1258,14 @@ Map<String, dynamic> _weekRowFor(
         row['task_name'] == taskName &&
         row['billable_value'] == billableValue,
   );
+}
+
+Map<String, dynamic> _setupSummaryRowFor(
+  List<Map<String, dynamic>> rows, {
+  required String kind,
+  required String name,
+}) {
+  return rows.singleWhere((row) => row['kind'] == kind && row['name'] == name);
 }
 
 class _ProjectTaskIds {
