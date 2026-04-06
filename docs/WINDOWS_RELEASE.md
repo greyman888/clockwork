@@ -1,6 +1,9 @@
-# Windows internal release
+# Windows Internal Release
 
 Clockwork's first production release path is a Windows-only internal installer.
+
+For the main project, product, and architectural context, start with
+[PROJECT_GUIDE.md](PROJECT_GUIDE.md).
 
 ## Canonical release values
 
@@ -38,6 +41,24 @@ Optional flags:
 .\tool\release\build_windows_installer.ps1 -SkipTests
 .\tool\release\build_windows_installer.ps1 -SkipFlutterBuild
 .\tool\release\build_windows_installer.ps1 -InnoSetupCompiler "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+```
+
+## UI verification before packaging
+
+Before packaging a candidate release, review the layout guide and run the
+targeted UI checks:
+
+- Shared guide: [UI_DESIGN_GUIDE.md](UI_DESIGN_GUIDE.md)
+- Preview run:
+
+```powershell
+flutter run -d windows --dart-define=CLOCKWORK_UI_PREVIEW=true
+```
+
+- Layout/widget checks:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\tool\test\run_layout_checks.ps1
 ```
 
 ## Smoke test checklist

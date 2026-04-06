@@ -6,10 +6,49 @@ import 'day_entry_validation.dart';
 import 'editor_helpers.dart';
 import 'time_entry_formatting.dart';
 
+typedef DayPageDataLoader =
+    Future<Map<String, dynamic>> Function(DateTime date);
+typedef DayPageSaveHandler = Future<void> Function(DayPageSaveRequest request);
+typedef DayPageDeleteHandler = Future<void> Function(int entryId);
+typedef DayPageTodayProvider = DateTime Function();
+
+class DayPageSaveRequest {
+  const DayPageSaveRequest({
+    required this.date,
+    required this.projectId,
+    required this.taskId,
+    required this.billableValue,
+    required this.startMinutes,
+    required this.endMinutes,
+    required this.note,
+    this.entryId,
+  });
+
+  final DateTime date;
+  final int projectId;
+  final int taskId;
+  final int billableValue;
+  final int startMinutes;
+  final int endMinutes;
+  final String note;
+  final int? entryId;
+}
+
 class DayPage extends StatefulWidget {
-  const DayPage({required this.initialDay, super.key});
+  const DayPage({
+    required this.initialDay,
+    this.loadDayPageData,
+    this.saveDayEntry,
+    this.deleteDayEntry,
+    this.todayProvider,
+    super.key,
+  });
 
   final DateTime initialDay;
+  final DayPageDataLoader? loadDayPageData;
+  final DayPageSaveHandler? saveDayEntry;
+  final DayPageDeleteHandler? deleteDayEntry;
+  final DayPageTodayProvider? todayProvider;
 
   @override
   State<DayPage> createState() => _DayPageState();
@@ -104,7 +143,8 @@ class _DayPageState extends State<DayPage> {
     });
 
     try {
-      final dayData = await dbHelper.getDayPageData(_selectedDay);
+      final loadDayPageData = widget.loadDayPageData ?? dbHelper.getDayPageData;
+      final dayData = await loadDayPageData(_selectedDay);
       final projects = List<Map<String, dynamic>>.from(
         dayData['projects'] as List<dynamic>? ?? const [],
       );
@@ -158,6 +198,7 @@ class _DayPageState extends State<DayPage> {
             startMinutes: entry['start_minutes'] as int?,
             endMinutes: entry['end_minutes'] as int?,
             note: entry['note'] as String? ?? '',
+            showTimeWarnings: entry['show_time_warnings'] as bool? ?? false,
           ),
         )
         .toList();
@@ -173,7 +214,7 @@ class _DayPageState extends State<DayPage> {
   }
 
   Future<void> _jumpToToday() async {
-    final today = dateOnly(DateTime.now());
+    final today = dateOnly((widget.todayProvider ?? DateTime.now).call());
     if (_selectedDay == today) {
       await _loadDay();
       return;
@@ -269,16 +310,32 @@ class _DayPageState extends State<DayPage> {
     setState(() => row.isSaving = true);
 
     try {
-      await dbHelper.saveDayEntry(
-        date: _selectedDay,
-        projectId: projectId,
-        taskId: taskId,
-        startMinutes: startMinutes,
-        endMinutes: endMinutes,
-        billableValue: billableValue,
-        note: row.noteController.text,
-        entryId: row.entryId,
-      );
+      final saveDayEntry = widget.saveDayEntry;
+      if (saveDayEntry != null) {
+        await saveDayEntry(
+          DayPageSaveRequest(
+            date: _selectedDay,
+            projectId: projectId,
+            taskId: taskId,
+            billableValue: billableValue,
+            startMinutes: startMinutes,
+            endMinutes: endMinutes,
+            note: row.noteController.text,
+            entryId: row.entryId,
+          ),
+        );
+      } else {
+        await dbHelper.saveDayEntry(
+          date: _selectedDay,
+          projectId: projectId,
+          taskId: taskId,
+          startMinutes: startMinutes,
+          endMinutes: endMinutes,
+          billableValue: billableValue,
+          note: row.noteController.text,
+          entryId: row.entryId,
+        );
+      }
 
       if (!mounted) {
         return;
@@ -325,7 +382,12 @@ class _DayPageState extends State<DayPage> {
     setState(() => row.isSaving = true);
 
     try {
-      await dbHelper.deleteEntity(entryId);
+      final deleteDayEntry = widget.deleteDayEntry;
+      if (deleteDayEntry != null) {
+        await deleteDayEntry(entryId);
+      } else {
+        await dbHelper.deleteEntity(entryId);
+      }
 
       if (!mounted) {
         return;
@@ -493,6 +555,7 @@ class _DayPageState extends State<DayPage> {
     final theme = FluentTheme.of(context);
 
     return Table(
+      key: const Key('dayTopControlsTable'),
       columnWidths: _entryTableColumnWidths,
       defaultVerticalAlignment: TableCellVerticalAlignment.bottom,
       children: [
@@ -501,13 +564,19 @@ class _DayPageState extends State<DayPage> {
             _tableCell(
               bottomPadding: 0,
               child: SizedBox(
+                key: const Key('dayDateControl'),
                 width: double.infinity,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Date', style: theme.typography.bodyStrong),
+                    Text(
+                      'Date',
+                      key: const Key('dayDateLabel'),
+                      style: theme.typography.bodyStrong,
+                    ),
                     const SizedBox(height: 8),
                     DatePicker(
+                      key: const Key('dayDatePicker'),
                       selected: _selectedDay,
                       showMonth: true,
                       showDay: true,
@@ -522,6 +591,7 @@ class _DayPageState extends State<DayPage> {
             _tableCell(
               bottomPadding: 0,
               child: SizedBox(
+                key: const Key('dayNavigationControls'),
                 width: double.infinity,
                 child: _buildDayNavigationControls(),
               ),
@@ -536,13 +606,19 @@ class _DayPageState extends State<DayPage> {
             _tableCell(
               bottomPadding: 0,
               child: SizedBox(
+                key: const Key('dayTotalControl'),
                 width: double.infinity,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Day Total', style: theme.typography.bodyStrong),
+                    Text(
+                      'Day Total',
+                      key: const Key('dayTotalLabel'),
+                      style: theme.typography.bodyStrong,
+                    ),
                     const SizedBox(height: 8),
                     Container(
+                      key: const Key('dayTotalField'),
                       height: 32,
                       alignment: Alignment.centerLeft,
                       padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -642,6 +718,7 @@ class _DayPageState extends State<DayPage> {
     }
 
     return Table(
+      key: const Key('dayEntryTable'),
       columnWidths: _entryTableColumnWidths,
       defaultVerticalAlignment: TableCellVerticalAlignment.bottom,
       children: [
@@ -660,12 +737,20 @@ class _DayPageState extends State<DayPage> {
       children: [
         _tableCell(
           bottomPadding: 10,
-          child: _headerCell(label: 'Project', style: theme),
+          child: SizedBox(
+            key: const Key('dayProjectHeaderCell'),
+            width: double.infinity,
+            child: _headerCell(label: 'Project', style: theme),
+          ),
         ),
         _tableGapCell(),
         _tableCell(
           bottomPadding: 10,
-          child: _headerCell(label: 'Task', style: theme),
+          child: SizedBox(
+            key: const Key('dayTaskHeaderCell'),
+            width: double.infinity,
+            child: _headerCell(label: 'Task', style: theme),
+          ),
         ),
         _tableGapCell(),
         _tableCell(
@@ -688,7 +773,11 @@ class _DayPageState extends State<DayPage> {
         _tableGapCell(),
         _tableCell(
           bottomPadding: 10,
-          child: _headerCell(label: 'Duration', style: theme),
+          child: SizedBox(
+            key: const Key('dayDurationHeaderCell'),
+            width: double.infinity,
+            child: _headerCell(label: 'Duration', style: theme),
+          ),
         ),
         _tableGapCell(),
         _tableCell(
@@ -938,6 +1027,7 @@ class _DayEntryDraft {
     this.projectId,
     this.taskId,
     this.billableValue = 0,
+    this.showTimeWarnings = false,
     int? startMinutes,
     int? endMinutes,
     String note = '',
@@ -960,6 +1050,7 @@ class _DayEntryDraft {
       projectId = null,
       taskId = null,
       billableValue = 1,
+      showTimeWarnings = false,
       noteController = TextEditingController(),
       startHourController = TextEditingController(),
       startMinuteController = TextEditingController(),
@@ -977,7 +1068,7 @@ class _DayEntryDraft {
   final TextEditingController endHourController;
   final TextEditingController endMinuteController;
   bool isSaving = false;
-  bool showTimeWarnings = false;
+  bool showTimeWarnings;
 
   int? get startMinutes {
     return _minutesFromParts(
@@ -1089,7 +1180,7 @@ class _TimeInput extends StatelessWidget {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 2),
             child: Text(':', style: theme.typography.bodyStrong),
           ),
           SizedBox(

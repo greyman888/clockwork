@@ -4,17 +4,35 @@ import 'package:flutter/services.dart';
 import 'app_db.dart';
 import 'time_entry_formatting.dart';
 
+typedef WeekPageDataLoader =
+    Future<Map<String, dynamic>> Function(DateTime date);
+typedef WeekPageTodayProvider = DateTime Function();
+
+class WeekPageNotesDialogRequest {
+  const WeekPageNotesDialogRequest({
+    required this.rowIndex,
+    required this.dayIndex,
+  });
+
+  final int rowIndex;
+  final int dayIndex;
+}
+
 class WeekPage extends StatefulWidget {
   const WeekPage({
     required this.onOpenDay,
     this.initialSelectedDate,
     this.loadWeekPageData,
+    this.todayProvider,
+    this.initialNotesDialogRequest,
     super.key,
   });
 
   final ValueChanged<DateTime> onOpenDay;
   final DateTime? initialSelectedDate;
-  final Future<Map<String, dynamic>> Function(DateTime date)? loadWeekPageData;
+  final WeekPageDataLoader? loadWeekPageData;
+  final WeekPageTodayProvider? todayProvider;
+  final WeekPageNotesDialogRequest? initialNotesDialogRequest;
 
   @override
   State<WeekPage> createState() => _WeekPageState();
@@ -91,6 +109,7 @@ class _WeekPageState extends State<WeekPage> {
   int _weekTotalMinutes = 0;
   bool _isLoading = true;
   String? _loadError;
+  bool _didOpenInitialNotesDialog = false;
 
   DateTime get _selectedWeekStart => startOfWeekMonday(_selectedDate);
 
@@ -99,6 +118,21 @@ class _WeekPageState extends State<WeekPage> {
     super.initState();
     _selectedDate = dateOnly(widget.initialSelectedDate ?? DateTime.now());
     _loadWeek();
+  }
+
+  @override
+  void didUpdateWidget(covariant WeekPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    final oldRequest = oldWidget.initialNotesDialogRequest;
+    final newRequest = widget.initialNotesDialogRequest;
+    final requestChanged =
+        oldRequest?.rowIndex != newRequest?.rowIndex ||
+        oldRequest?.dayIndex != newRequest?.dayIndex;
+
+    if (requestChanged) {
+      _didOpenInitialNotesDialog = false;
+    }
   }
 
   Future<void> _loadWeek() async {
@@ -128,6 +162,7 @@ class _WeekPageState extends State<WeekPage> {
         _rows = rows;
         _weekTotalMinutes = weekTotalMinutes;
       });
+      _openInitialNotesDialogIfNeeded(rows);
     } catch (error) {
       if (!mounted) {
         return;
@@ -147,7 +182,7 @@ class _WeekPageState extends State<WeekPage> {
   }
 
   Future<void> _jumpToCurrentWeek() async {
-    final today = dateOnly(DateTime.now());
+    final today = dateOnly((widget.todayProvider ?? DateTime.now).call());
     if (_selectedDate == today) {
       await _loadWeek();
       return;
@@ -155,6 +190,39 @@ class _WeekPageState extends State<WeekPage> {
 
     setState(() => _selectedDate = today);
     await _loadWeek();
+  }
+
+  void _openInitialNotesDialogIfNeeded(List<Map<String, dynamic>> rows) {
+    final request = widget.initialNotesDialogRequest;
+    if (_didOpenInitialNotesDialog || request == null) {
+      return;
+    }
+
+    if (request.rowIndex < 0 ||
+        request.rowIndex >= rows.length ||
+        request.dayIndex < 0 ||
+        request.dayIndex >= 7) {
+      return;
+    }
+
+    final row = rows[request.rowIndex];
+    final noteLines = _dayNoteLinesForRow(row);
+    if (request.dayIndex >= noteLines.length) {
+      return;
+    }
+
+    _didOpenInitialNotesDialog = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+
+      _showDayNotesDialog(
+        row: row,
+        dayIndex: request.dayIndex,
+        noteLines: noteLines[request.dayIndex],
+      );
+    });
   }
 
   Future<void> _shiftSelectedWeek(int weekOffset) async {
@@ -232,6 +300,7 @@ class _WeekPageState extends State<WeekPage> {
     final theme = FluentTheme.of(context);
 
     return Table(
+      key: const Key('weekTopControlsTable'),
       columnWidths: _summaryTableColumnWidths,
       defaultVerticalAlignment: TableCellVerticalAlignment.bottom,
       children: [
@@ -240,13 +309,19 @@ class _WeekPageState extends State<WeekPage> {
             _tableCell(
               bottomPadding: 0,
               child: SizedBox(
+                key: const Key('weekDateControl'),
                 width: double.infinity,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Date', style: theme.typography.bodyStrong),
+                    Text(
+                      'Date',
+                      key: const Key('weekDateLabel'),
+                      style: theme.typography.bodyStrong,
+                    ),
                     const SizedBox(height: 8),
                     DatePicker(
+                      key: const Key('weekDatePicker'),
                       selected: _selectedDate,
                       showMonth: true,
                       showDay: true,
@@ -261,6 +336,7 @@ class _WeekPageState extends State<WeekPage> {
             _tableCell(
               bottomPadding: 0,
               child: SizedBox(
+                key: const Key('weekNavigationControls'),
                 width: double.infinity,
                 child: _buildWeekNavigationControls(),
               ),
@@ -277,13 +353,19 @@ class _WeekPageState extends State<WeekPage> {
             _tableCell(
               bottomPadding: 0,
               child: SizedBox(
+                key: const Key('weekTotalControl'),
                 width: double.infinity,
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text('Week Total', style: theme.typography.bodyStrong),
+                    Text(
+                      'Week Total',
+                      key: const Key('weekTotalLabel'),
+                      style: theme.typography.bodyStrong,
+                    ),
                     const SizedBox(height: 8),
                     Container(
+                      key: const Key('weekTotalField'),
                       height: 32,
                       alignment: Alignment.centerLeft,
                       padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -381,6 +463,7 @@ class _WeekPageState extends State<WeekPage> {
     }
 
     return Table(
+      key: const Key('weekSummaryTable'),
       columnWidths: _summaryTableColumnWidths,
       defaultVerticalAlignment: TableCellVerticalAlignment.bottom,
       children: [
@@ -397,14 +480,11 @@ class _WeekPageState extends State<WeekPage> {
       children: [
         _tableCell(
           child: _summaryHeaderCell(
-            Text('Project', style: theme.typography.bodyStrong),
-          ),
-          bottomPadding: 10,
-        ),
-        _tableGapCell(),
-        _tableCell(
-          child: _summaryHeaderCell(
-            Text('Task', style: theme.typography.bodyStrong),
+            SizedBox(
+              key: const Key('weekProjectHeaderCell'),
+              width: double.infinity,
+              child: Text('Project', style: theme.typography.bodyStrong),
+            ),
           ),
           bottomPadding: 10,
         ),
@@ -412,6 +492,18 @@ class _WeekPageState extends State<WeekPage> {
         _tableCell(
           child: _summaryHeaderCell(
             SizedBox(
+              key: const Key('weekTaskHeaderCell'),
+              width: double.infinity,
+              child: Text('Task', style: theme.typography.bodyStrong),
+            ),
+          ),
+          bottomPadding: 10,
+        ),
+        _tableGapCell(),
+        _tableCell(
+          child: _summaryHeaderCell(
+            SizedBox(
+              key: const Key('weekBillHeaderCell'),
               width: double.infinity,
               child: Text('Bill', style: theme.typography.bodyStrong),
             ),
@@ -426,6 +518,7 @@ class _WeekPageState extends State<WeekPage> {
         _tableCell(
           child: _summaryHeaderCell(
             SizedBox(
+              key: const Key('weekTotalHeaderCell'),
               width: double.infinity,
               child: Text('Total', style: theme.typography.bodyStrong),
             ),
@@ -571,7 +664,9 @@ class _WeekPageState extends State<WeekPage> {
         : 'Non-billable';
     final projectName = row['project_name'] as String? ?? 'Project';
     final taskName = row['task_name'] as String? ?? 'Task';
-    final notesText = noteLines.isEmpty ? 'No notes recorded.' : noteLines.join('\n');
+    final notesText = noteLines.isEmpty
+        ? 'No notes recorded.'
+        : noteLines.join('\n');
 
     await Clipboard.setData(ClipboardData(text: notesText));
     if (!mounted) {

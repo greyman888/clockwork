@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:fluent_ui/fluent_ui.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, kReleaseMode;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'app_db.dart';
@@ -9,10 +9,13 @@ import 'day_page.dart';
 import 'definitions_page.dart';
 import 'entities_page.dart';
 import 'time_entry_formatting.dart';
+import 'ui_preview_page.dart';
 import 'week_page.dart';
 
 const _lightShellColor = Color(0xFFF3F3F3);
 const _darkShellColor = Color(0xFF202020);
+const _uiPreviewEnabled =
+    !kReleaseMode && bool.fromEnvironment('CLOCKWORK_UI_PREVIEW');
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -147,6 +150,12 @@ class _ClockworkShellState extends State<ClockworkShell> {
               title: const Text('Entities'),
               body: const EntitiesPage(),
             ),
+            if (_uiPreviewEnabled)
+              PaneItem(
+                icon: const Icon(FluentIcons.design),
+                title: const Text('Preview'),
+                body: const UiPreviewPage(),
+              ),
           ],
         ),
       ),
