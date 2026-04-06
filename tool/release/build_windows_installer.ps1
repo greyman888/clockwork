@@ -55,10 +55,10 @@ if (-not (Test-Path -Path $releaseDirectory -PathType Container)) {
 }
 
 if (-not $InnoSetupCompiler) {
-    $compilerCandidates = @(
+    $compilerCandidates = @(@(
         $(if ($env:ProgramFiles) { Join-Path $env:ProgramFiles 'Inno Setup 6\ISCC.exe' }),
         $(if (${env:ProgramFiles(x86)}) { Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6\ISCC.exe' })
-    ) | Where-Object { $_ -and (Test-Path -Path $_ -PathType Leaf) }
+    ) | Where-Object { $_ -and (Test-Path -Path $_ -PathType Leaf) })
 
     if ($compilerCandidates.Count -eq 0) {
         throw 'Inno Setup 6 was not found. Install Inno Setup or pass -InnoSetupCompiler <path-to-ISCC.exe>.'
