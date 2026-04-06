@@ -390,6 +390,7 @@ class _DayPageState extends State<DayPage> {
     final startMinutes = row.startMinutes;
     final endMinutes = row.endMinutes;
     final billableValue = row.billableValue;
+    final note = row.noteController.text.trim();
 
     if (projectId == null ||
         taskId == null ||
@@ -400,6 +401,15 @@ class _DayPageState extends State<DayPage> {
         title: 'Complete the row first',
         message:
             'Select a project, choose a task, and enter valid hour and minute values for both start and end times before saving.',
+      );
+      return;
+    }
+
+    if (note.isEmpty) {
+      await showNoticeDialog(
+        context,
+        title: 'Enter a note',
+        message: 'Type a note before saving the time entry.',
       );
       return;
     }
@@ -417,7 +427,7 @@ class _DayPageState extends State<DayPage> {
             billableValue: billableValue,
             startMinutes: startMinutes,
             endMinutes: endMinutes,
-            note: row.noteController.text,
+            note: note,
             entryId: row.entryId,
           ),
         );
@@ -429,7 +439,7 @@ class _DayPageState extends State<DayPage> {
           startMinutes: startMinutes,
           endMinutes: endMinutes,
           billableValue: billableValue,
-          note: row.noteController.text,
+          note: note,
           entryId: row.entryId,
         );
       }
@@ -511,12 +521,14 @@ class _DayPageState extends State<DayPage> {
   bool _canSaveRow(_DayEntryDraft row) {
     final startMinutes = row.startMinutes;
     final endMinutes = row.endMinutes;
+    final note = row.noteController.text.trim();
 
     if (row.isSaving ||
         row.projectId == null ||
         row.taskId == null ||
         startMinutes == null ||
-        endMinutes == null) {
+        endMinutes == null ||
+        note.isEmpty) {
       return false;
     }
 
@@ -563,6 +575,7 @@ class _DayPageState extends State<DayPage> {
   }
 
   Widget _buildActionButton({
+    Key? key,
     required IconData icon,
     required String tooltip,
     required VoidCallback? onPressed,
@@ -574,11 +587,13 @@ class _DayPageState extends State<DayPage> {
 
     final button = filled
         ? FilledButton(
+            key: key,
             style: buttonStyle,
             onPressed: onPressed,
             child: Icon(icon, size: 16),
           )
         : Button(
+            key: key,
             style: buttonStyle,
             onPressed: onPressed,
             child: Icon(icon, size: 16),
@@ -594,8 +609,9 @@ class _DayPageState extends State<DayPage> {
     );
   }
 
-  Widget _buildRowActions(_DayEntryDraft row) {
+  Widget _buildRowActions(_DayEntryDraft row, {Key? saveButtonKey}) {
     final saveButton = _buildActionButton(
+      key: saveButtonKey,
       icon: FluentIcons.save,
       tooltip: row.isSaving ? 'Saving entry' : 'Save entry',
       onPressed: _canSaveRow(row) ? () => _saveRow(row) : null,
@@ -994,6 +1010,12 @@ class _DayPageState extends State<DayPage> {
             child: Align(
               alignment: Alignment.centerLeft,
               child: _TimeInput(
+                hourFieldKey: row.entryId == null
+                    ? const Key('dayNewRowStartHourField')
+                    : null,
+                minuteFieldKey: row.entryId == null
+                    ? const Key('dayNewRowStartMinuteField')
+                    : null,
                 hourController: row.startHourController,
                 minuteController: row.startMinuteController,
                 enabled: !row.isSaving,
@@ -1015,6 +1037,12 @@ class _DayPageState extends State<DayPage> {
             child: Align(
               alignment: Alignment.centerLeft,
               child: _TimeInput(
+                hourFieldKey: row.entryId == null
+                    ? const Key('dayNewRowEndHourField')
+                    : null,
+                minuteFieldKey: row.entryId == null
+                    ? const Key('dayNewRowEndMinuteField')
+                    : null,
                 hourController: row.endHourController,
                 minuteController: row.endMinuteController,
                 enabled: !row.isSaving,
@@ -1052,9 +1080,19 @@ class _DayPageState extends State<DayPage> {
             child: SizedBox(
               width: double.infinity,
               child: TextBox(
+                key: row.entryId == null
+                    ? const Key('dayNewRowNoteField')
+                    : null,
                 controller: row.noteController,
                 placeholder: 'What did you work on?',
+                textInputAction: TextInputAction.done,
                 enabled: !row.isSaving,
+                onChanged: (_) => setState(() {}),
+                onSubmitted: (_) async {
+                  if (!row.isSaving) {
+                    await _saveRow(row);
+                  }
+                },
               ),
             ),
           ),
@@ -1067,7 +1105,12 @@ class _DayPageState extends State<DayPage> {
               width: double.infinity,
               child: Padding(
                 padding: const EdgeInsets.only(bottom: 1),
-                child: _buildRowActions(row),
+                child: _buildRowActions(
+                  row,
+                  saveButtonKey: row.entryId == null
+                      ? const Key('dayNewRowSaveButton')
+                      : null,
+                ),
               ),
             ),
           ),
@@ -1233,6 +1276,8 @@ class _DayEntryDraft {
 
 class _TimeInput extends StatelessWidget {
   const _TimeInput({
+    this.hourFieldKey,
+    this.minuteFieldKey,
     required this.hourController,
     required this.minuteController,
     required this.enabled,
@@ -1241,6 +1286,8 @@ class _TimeInput extends StatelessWidget {
     required this.showWarning,
   });
 
+  final Key? hourFieldKey;
+  final Key? minuteFieldKey;
   final TextEditingController hourController;
   final TextEditingController minuteController;
   final bool enabled;
@@ -1264,6 +1311,7 @@ class _TimeInput extends StatelessWidget {
           SizedBox(
             width: 42,
             child: TextBox(
+              key: hourFieldKey,
               controller: hourController,
               placeholder: 'HH',
               textAlign: TextAlign.center,
@@ -1286,6 +1334,7 @@ class _TimeInput extends StatelessWidget {
           SizedBox(
             width: 42,
             child: TextBox(
+              key: minuteFieldKey,
               controller: minuteController,
               placeholder: 'MM',
               textAlign: TextAlign.center,

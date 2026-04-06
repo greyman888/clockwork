@@ -100,6 +100,8 @@ Expected behavior:
 - As the user types, the first matching project name should be auto-completed
   into the field with the suggested remainder selected, so typing `a` can
   become `Adore` and continuing with `d` refines the field to `Adore`.
+- A note is required before a Day row can be saved.
+- Pressing `Enter` in the Day row note field should submit that row.
 - On Windows startup, the default app window width should be wide enough to
   show the full Day row actions, including Save and Delete, with a small
   right-side margin and without horizontal clipping.

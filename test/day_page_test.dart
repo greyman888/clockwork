@@ -78,6 +78,115 @@ void main() {
       expect(controller.selection.end, 5);
     },
   );
+
+  testWidgets('new day-row requires a note before save is enabled', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      FluentApp(
+        home: DayPage(
+          initialDay: DateTime(2026, 4, 8),
+          loadDayPageData: (_) async => _buildDayPageData(),
+          saveDayEntry: (_) async {},
+          deleteDayEntry: (_) async {},
+          todayProvider: () => DateTime(2026, 4, 8),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await _populateNewRowRequiredFields(tester);
+
+    var saveButton = tester.widget<FilledButton>(
+      find.byKey(const Key('dayNewRowSaveButton')),
+    );
+    expect(saveButton.onPressed, isNull);
+
+    await tester.enterText(
+      find.byKey(const Key('dayNewRowNoteField')),
+      'UAT integration investigation',
+    );
+    await tester.pump();
+
+    saveButton = tester.widget<FilledButton>(
+      find.byKey(const Key('dayNewRowSaveButton')),
+    );
+    expect(saveButton.onPressed, isNotNull);
+  });
+
+  testWidgets('pressing enter in the note field saves the new row', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1400, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    final savedRequests = <DayPageSaveRequest>[];
+
+    await tester.pumpWidget(
+      FluentApp(
+        home: DayPage(
+          initialDay: DateTime(2026, 4, 8),
+          loadDayPageData: (_) async => _buildDayPageData(),
+          saveDayEntry: (request) async => savedRequests.add(request),
+          deleteDayEntry: (_) async {},
+          todayProvider: () => DateTime(2026, 4, 8),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await _populateNewRowRequiredFields(tester);
+    await tester.tap(find.byKey(const Key('dayNewRowNoteField')));
+    await tester.pump();
+    await tester.enterText(
+      find.byKey(const Key('dayNewRowNoteField')),
+      'UAT integration investigation',
+    );
+    await tester.pump();
+
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+
+    expect(savedRequests, hasLength(1));
+    expect(savedRequests.single.projectId, 1);
+    expect(savedRequests.single.taskId, 11);
+    expect(savedRequests.single.startMinutes, 9 * 60);
+    expect(savedRequests.single.endMinutes, 10 * 60 + 15);
+    expect(savedRequests.single.note, 'UAT integration investigation');
+  });
+}
+
+Future<void> _populateNewRowRequiredFields(WidgetTester tester) async {
+  final projectTextBoxFinder = find.descendant(
+    of: find.byKey(const Key('dayNewRowProjectField')),
+    matching: find.byType(TextBox),
+  );
+
+  await tester.tap(projectTextBoxFinder);
+  await tester.pump();
+  await tester.enterText(projectTextBoxFinder, 'a');
+  await tester.pump();
+
+  await tester.enterText(
+    find.byKey(const Key('dayNewRowStartHourField')),
+    '09',
+  );
+  await tester.pump();
+  await tester.enterText(
+    find.byKey(const Key('dayNewRowStartMinuteField')),
+    '00',
+  );
+  await tester.pump();
+  await tester.enterText(find.byKey(const Key('dayNewRowEndHourField')), '10');
+  await tester.pump();
+  await tester.enterText(
+    find.byKey(const Key('dayNewRowEndMinuteField')),
+    '15',
+  );
+  await tester.pump();
 }
 
 Map<String, dynamic> _buildDayPageData() {
