@@ -191,8 +191,12 @@ Expected behavior:
 - The manager should be based on the existing entities workflow, but should be
   specialized so the user can create, edit, and delete projects and then tasks
   without choosing a generic entity kind.
+- The project form and task form should default to their new-entity states when
+  the page opens instead of preloading an existing entity for editing.
 - The task manager should default to the currently selected project context and
   should filter its existing-task list by that project when possible.
+- After creating a project or task, the relevant form should return to its
+  new-entity state instead of remaining on the created entity's edit view.
 - The right column should show a readonly table of all-time totals across all
   recorded days.
 - The summary should include a row for every current project entity and every

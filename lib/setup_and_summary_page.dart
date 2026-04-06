@@ -119,6 +119,7 @@ class _SetupAndSummaryPageState extends State<SetupAndSummaryPage> {
   List<String> _billabilityMonthLabels = const [];
   List<Map<String, dynamic>> _billabilityRows = const [];
   int? _selectedProjectId;
+  int? _editingProjectId;
   int? _selectedTaskId;
   int? _taskProjectId;
   bool _isLoading = true;
@@ -128,7 +129,7 @@ class _SetupAndSummaryPageState extends State<SetupAndSummaryPage> {
 
   bool get _hasProjects => _projects.isNotEmpty;
 
-  bool get _isEditingProject => _selectedProjectId != null;
+  bool get _isEditingProject => _editingProjectId != null;
 
   bool get _isEditingTask => _selectedTaskId != null;
 
@@ -221,7 +222,11 @@ class _SetupAndSummaryPageState extends State<SetupAndSummaryPage> {
     super.dispose();
   }
 
-  Future<void> _loadPage({int? selectProjectId, int? selectTaskId}) async {
+  Future<void> _loadPage({
+    int? selectProjectId,
+    int? editProjectId,
+    int? editTaskId,
+  }) async {
     setState(() {
       _isLoading = true;
       _loadError = null;
@@ -260,7 +265,8 @@ class _SetupAndSummaryPageState extends State<SetupAndSummaryPage> {
         );
         _restoreSelectionState(
           preferredProjectId: selectProjectId,
-          preferredTaskId: selectTaskId,
+          editProjectId: editProjectId,
+          editTaskId: editTaskId,
         );
       });
     } catch (error) {
@@ -275,6 +281,7 @@ class _SetupAndSummaryPageState extends State<SetupAndSummaryPage> {
         _billabilityMonthLabels = const [];
         _billabilityRows = const [];
         _selectedProjectId = null;
+        _editingProjectId = null;
         _selectedTaskId = null;
         _taskProjectId = null;
         _projectNameController.clear();
@@ -288,41 +295,39 @@ class _SetupAndSummaryPageState extends State<SetupAndSummaryPage> {
     }
   }
 
-  void _restoreSelectionState({int? preferredProjectId, int? preferredTaskId}) {
-    final nextTask = _taskById(preferredTaskId ?? _selectedTaskId);
-    if (nextTask != null) {
-      final taskId = nextTask['id'] as int;
-      final taskName = nextTask['name'] as String;
-      final taskProjectId = nextTask['project_id'] as int?;
-      final parentProject = taskProjectId == null
-          ? null
-          : _projectById(taskProjectId);
+  void _restoreSelectionState({
+    int? preferredProjectId,
+    int? editProjectId,
+    int? editTaskId,
+  }) {
+    final nextEditingProject = _projectById(editProjectId);
+    final nextEditingTask = _taskById(editTaskId);
+    final nextEditingTaskProjectId = nextEditingTask?['project_id'] as int?;
+    final nextProjectId = _resolveProjectId(
+      preferredProjectId ??
+          nextEditingTaskProjectId ??
+          (nextEditingProject?['id'] as int?) ??
+          _selectedProjectId ??
+          _taskProjectId,
+    );
 
-      _selectedTaskId = taskId;
-      _taskNameController.text = taskName;
-      _taskProjectId = taskProjectId ?? _resolveProjectId(_taskProjectId);
+    _selectedProjectId = nextProjectId;
+    _editingProjectId = nextEditingProject?['id'] as int?;
 
-      if (parentProject != null) {
-        _selectedProjectId = taskProjectId;
-        _projectNameController.text = parentProject['name'] as String;
-      } else {
-        final fallbackProjectId = _resolveProjectId(
-          preferredProjectId ?? _selectedProjectId,
-        );
-        _selectedProjectId = fallbackProjectId;
-        _projectNameController.text =
-            _projectById(fallbackProjectId)?['name'] as String? ?? '';
-      }
+    if (nextEditingProject != null) {
+      _projectNameController.text = nextEditingProject['name'] as String;
+    } else {
+      _projectNameController.clear();
+    }
+
+    if (nextEditingTask != null) {
+      _selectedTaskId = nextEditingTask['id'] as int;
+      _taskNameController.text = nextEditingTask['name'] as String;
+      _taskProjectId = nextEditingTaskProjectId ?? nextProjectId;
       return;
     }
 
-    final nextProjectId = _resolveProjectId(
-      preferredProjectId ?? _selectedProjectId,
-    );
-    _selectedProjectId = nextProjectId;
     _selectedTaskId = null;
-    _projectNameController.text =
-        _projectById(nextProjectId)?['name'] as String? ?? '';
     _taskNameController.clear();
     _taskProjectId = _resolveProjectId(
       preferredProjectId ?? _taskProjectId ?? nextProjectId,
@@ -379,6 +384,7 @@ class _SetupAndSummaryPageState extends State<SetupAndSummaryPage> {
 
     setState(() {
       _selectedProjectId = projectId;
+      _editingProjectId = projectId;
       _projectNameController.text = projectName;
       _selectedTaskId = null;
       _taskNameController.clear();
@@ -390,22 +396,22 @@ class _SetupAndSummaryPageState extends State<SetupAndSummaryPage> {
     final taskId = task['id'] as int;
     final taskName = task['name'] as String;
     final taskProjectId = task['project_id'] as int?;
-    final parentProject = _projectById(taskProjectId);
 
     setState(() {
       _selectedTaskId = taskId;
       _taskNameController.text = taskName;
       _taskProjectId = taskProjectId;
-      if (parentProject != null) {
+      _editingProjectId = null;
+      _projectNameController.clear();
+      if (_projectById(taskProjectId) != null) {
         _selectedProjectId = taskProjectId;
-        _projectNameController.text = parentProject['name'] as String;
       }
     });
   }
 
   void _startNewProjectDraft() {
     setState(() {
-      _selectedProjectId = null;
+      _editingProjectId = null;
       _projectNameController.clear();
     });
   }
@@ -432,24 +438,28 @@ class _SetupAndSummaryPageState extends State<SetupAndSummaryPage> {
     setState(() => _isProjectSaving = true);
 
     try {
+      final editingProjectId = _editingProjectId;
       final saveProject = widget.saveProject;
       final savedProjectId = saveProject != null
           ? await saveProject(
               SetupAndSummaryProjectSaveRequest(
                 name: projectName,
-                projectId: _selectedProjectId,
+                projectId: editingProjectId,
               ),
             )
           : await dbHelper.saveProject(
               name: projectName,
-              projectId: _selectedProjectId,
+              projectId: editingProjectId,
             );
 
       if (!mounted) {
         return;
       }
 
-      await _loadPage(selectProjectId: savedProjectId);
+      await _loadPage(
+        selectProjectId: savedProjectId,
+        editProjectId: editingProjectId == null ? null : savedProjectId,
+      );
     } catch (error) {
       if (!mounted) {
         return;
@@ -491,26 +501,30 @@ class _SetupAndSummaryPageState extends State<SetupAndSummaryPage> {
     setState(() => _isTaskSaving = true);
 
     try {
+      final editingTaskId = _selectedTaskId;
       final saveTask = widget.saveTask;
       final savedTaskId = saveTask != null
           ? await saveTask(
               SetupAndSummaryTaskSaveRequest(
                 name: taskName,
                 projectId: projectId,
-                taskId: _selectedTaskId,
+                taskId: editingTaskId,
               ),
             )
           : await dbHelper.saveTask(
               name: taskName,
               projectId: projectId,
-              taskId: _selectedTaskId,
+              taskId: editingTaskId,
             );
 
       if (!mounted) {
         return;
       }
 
-      await _loadPage(selectProjectId: projectId, selectTaskId: savedTaskId);
+      await _loadPage(
+        selectProjectId: projectId,
+        editTaskId: editingTaskId == null ? null : savedTaskId,
+      );
     } catch (error) {
       if (!mounted) {
         return;
@@ -529,7 +543,7 @@ class _SetupAndSummaryPageState extends State<SetupAndSummaryPage> {
   }
 
   Future<void> _deleteProject() async {
-    final projectId = _selectedProjectId;
+    final projectId = _editingProjectId;
     if (projectId == null) {
       return;
     }
@@ -679,7 +693,7 @@ class _SetupAndSummaryPageState extends State<SetupAndSummaryPage> {
   Widget _buildProjectsCard(BuildContext context) {
     final theme = FluentTheme.of(context);
     final projectStatusLabel = _isEditingProject
-        ? 'Project #$_selectedProjectId'
+        ? 'Project #$_editingProjectId'
         : 'Draft';
 
     return Card(

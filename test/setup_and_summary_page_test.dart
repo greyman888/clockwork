@@ -101,6 +101,68 @@ void main() {
     },
   );
 
+  testWidgets(
+    'defaults the project and task forms to new when setup data already exists',
+    (tester) async {
+      final store = _FakeSetupAndSummaryStore(
+        projects: const [
+          {'id': 1, 'name': 'Project Atlas'},
+          {'id': 2, 'name': 'Project Bravo'},
+        ],
+        tasks: const [
+          {'id': 11, 'project_id': 1, 'name': 'Analysis'},
+          {'id': 21, 'project_id': 2, 'name': 'Returns'},
+        ],
+        timeEntries: const [],
+      );
+
+      await tester.binding.setSurfaceSize(const Size(1400, 1200));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        FluentApp(
+          home: SetupAndSummaryPage(
+            loadPageData: store.load,
+            saveProject: store.saveProject,
+            saveTask: store.saveTask,
+            deleteEntity: store.delete,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('New project'), findsOneWidget);
+      expect(find.text('Create project'), findsOneWidget);
+      expect(
+        find.byKey(const Key('setupSummaryDeleteProjectButton')),
+        findsNothing,
+      );
+      expect(
+        tester
+            .widget<TextBox>(
+              find.byKey(const Key('setupSummaryProjectNameField')),
+            )
+            .controller!
+            .text,
+        isEmpty,
+      );
+
+      expect(find.text('New task'), findsOneWidget);
+      expect(find.text('Create task'), findsOneWidget);
+      expect(
+        find.byKey(const Key('setupSummaryDeleteTaskButton')),
+        findsNothing,
+      );
+      expect(
+        tester
+            .widget<TextBox>(find.byKey(const Key('setupSummaryTaskNameField')))
+            .controller!
+            .text,
+        isEmpty,
+      );
+    },
+  );
+
   testWidgets('selecting a project filters the visible task list', (
     tester,
   ) async {
@@ -210,6 +272,21 @@ void main() {
         findsOneWidget,
       );
       expect(find.text('Project Atlas'), findsWidgets);
+      expect(find.text('New project'), findsOneWidget);
+      expect(find.text('Create project'), findsOneWidget);
+      expect(
+        find.byKey(const Key('setupSummaryDeleteProjectButton')),
+        findsNothing,
+      );
+      expect(
+        tester
+            .widget<TextBox>(
+              find.byKey(const Key('setupSummaryProjectNameField')),
+            )
+            .controller!
+            .text,
+        isEmpty,
+      );
 
       await tester.ensureVisible(
         find.byKey(const Key('setupSummaryTaskNameField')),
@@ -233,6 +310,19 @@ void main() {
       );
       expect(find.text('Analysis'), findsWidgets);
       expect(find.text('0m'), findsWidgets);
+      expect(find.text('New task'), findsOneWidget);
+      expect(find.text('Create task'), findsOneWidget);
+      expect(
+        find.byKey(const Key('setupSummaryDeleteTaskButton')),
+        findsNothing,
+      );
+      expect(
+        tester
+            .widget<TextBox>(find.byKey(const Key('setupSummaryTaskNameField')))
+            .controller!
+            .text,
+        isEmpty,
+      );
     },
   );
 }
